@@ -989,15 +989,24 @@ class DualPlayerEngine @Inject constructor(
      *
      * Low-RAM devices ([ActivityManager.isLowRamDevice]) receive halved buffer ceilings
      * to prevent memory pressure when both players co-exist during a crossfade.
-     * [bufferForPlaybackMs] is set to 250 ms and rebuffer to 500 ms for sub-150ms instant
-     * playback start on local media files.
+     * Low-latency buffer durations (250 ms playback start, 500 ms rebuffer) are configured
+     * specifically for local media playback ([DefaultLoadControl.Builder.setBufferDurationsMsForLocalPlayback]),
+     * while standard ExoPlayer buffer durations (2 500 ms playback start, 5 000 ms rebuffer)
+     * are retained for remote streams ([DefaultLoadControl.Builder.setBufferDurationsMsForStreaming])
+     * to avoid network underruns (Navidrome, Jellyfin, HTTP).
      */
     private fun buildAdaptiveLoadControl(): DefaultLoadControl {
         val isLowRam = (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
             .isLowRamDevice
         return if (isLowRam) {
             DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
+                .setBufferDurationsMsForStreaming(
+                    15_000,
+                    30_000,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                )
+                .setBufferDurationsMsForLocalPlayback(
                     15_000,
                     30_000,
                     250,
@@ -1007,7 +1016,13 @@ class DualPlayerEngine @Inject constructor(
                 .build()
         } else {
             DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
+                .setBufferDurationsMsForStreaming(
+                    30_000,
+                    60_000,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                )
+                .setBufferDurationsMsForLocalPlayback(
                     30_000,
                     60_000,
                     250,

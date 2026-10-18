@@ -1389,11 +1389,17 @@ class LyricsRepositoryImpl @Inject constructor(
 
     override suspend fun resetLyrics(songId: Long): Unit = withContext(Dispatchers.IO) {
         LogUtils.d(this, "Resetting lyrics for songId: $songId")
-        val cacheKey = generateCacheKey(songId.toString())
+        val songIdStr = songId.toString()
+        val cacheKey = generateCacheKey(songIdStr)
         lyricsCache.remove(cacheKey)
         try {
             lyricsDao.deleteLyrics(songId)
-            geminiLyricsDao.deleteCache(getGeminiTrackKey(songId.toString()))
+            val prefix = getGeminiSongPrefix(songIdStr)
+            geminiLyricsDao.deleteCacheByPrefix("$prefix%")
+            val legacyHash = MessageDigest.getInstance("SHA-256")
+                .digest(songIdStr.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            geminiLyricsDao.deleteCache("gemini_$legacyHash")
         } catch (e: Exception) {
             Timber.tag(TAG).w(e, "Error removing lyrics from DB for ID: $songId")
         }
@@ -1526,10 +1532,20 @@ class LyricsRepositoryImpl @Inject constructor(
         return@withContext updatedCount.get()
     }
 
+    private fun getDefaultTargetLanguage(): String {
+        return try {
+            val locales = context.resources?.configuration?.locales
+            val locale = if (locales != null && !locales.isEmpty) locales.get(0) else java.util.Locale.getDefault()
+            locale?.displayLanguage?.takeIf { it.isNotBlank() } ?: "English"
+        } catch (_: Throwable) {
+            java.util.Locale.getDefault().displayLanguage.takeIf { it.isNotBlank() } ?: "English"
+        }
+    }
+
     override suspend fun enrichLyricsWithGemini(song: Song, lyrics: Lyrics): Lyrics = withContext(Dispatchers.IO) {
         val enabled = userPreferencesRepository.geminiLyricsEnabledFlow.first()
         if (!enabled) return@withContext lyrics
-        enrichLyricsWithGeminiResult(song, lyrics).getOrDefault(lyrics)
+        enrichLyricsWithGeminiResult(song, lyrics, getDefaultTargetLanguage()).getOrDefault(lyrics)
     }
 
     override suspend fun enrichLyricsWithGeminiResult(
@@ -1543,7 +1559,10 @@ class LyricsRepositoryImpl @Inject constructor(
                 return@withContext Result.failure(IllegalStateException("API key is not configured"))
             }
 
-            val trackKey = getGeminiTrackKey(song)
+            val resolvedTargetLanguage = targetLanguage.ifBlank { getDefaultTargetLanguage() }
+            val preferredModel = userPreferencesRepository.geminiModelFlow.first().ifBlank { "gemini-3.5-flash-lite" }
+            val songIdentifier = song.id.ifBlank { song.contentUriString.ifBlank { song.path } }
+            val trackKey = getGeminiTrackKey(songIdentifier, resolvedTargetLanguage, preferredModel)
 
             if (!lyrics.synced.isNullOrEmpty()) {
                 val lines = lyrics.synced.map { it.line }
@@ -1552,13 +1571,12 @@ class LyricsRepositoryImpl @Inject constructor(
                 val textHash = hashLyricsText(lines)
                 val cached = geminiLyricsDao.getCache(trackKey)
 
-                val preferredModel = userPreferencesRepository.geminiModelFlow.first()
                 val items: List<GeminiLyricItem> = if (cached != null && cached.originalTextHash == textHash) {
                     deserializeGeminiItems(cached.structuredJson) ?: return@withContext Result.failure(
                         IOException("Failed to deserialize cached lyrics")
                     )
                 } else {
-                    val result = geminiLyricsClient.translateAndRomanize(lines, apiKey, targetLanguage, preferredModel)
+                    val result = geminiLyricsClient.translateAndRomanize(lines, apiKey, resolvedTargetLanguage, preferredModel)
                     if (result.isSuccess) {
                         val fetchedItems = result.getOrThrow()
                         geminiLyricsDao.insertCache(
@@ -1571,7 +1589,6 @@ class LyricsRepositoryImpl @Inject constructor(
                         fetchedItems
                     } else {
                         val ex = result.exceptionOrNull() ?: IOException("Gemini translation failed")
-                        android.util.Log.e(TAG, "Gemini lyrics enrichment failed: ${ex.message}", ex)
                         Timber.tag(TAG).e(ex, "Gemini lyrics enrichment failed: %s", ex.message)
                         return@withContext Result.failure(ex)
                     }
@@ -1603,8 +1620,7 @@ class LyricsRepositoryImpl @Inject constructor(
                         IOException("Failed to deserialize cached plain lyrics")
                     )
                 } else {
-                    val preferredModel = userPreferencesRepository.geminiModelFlow.first()
-                    val result = geminiLyricsClient.translateAndRomanize(lines, apiKey, targetLanguage, preferredModel)
+                    val result = geminiLyricsClient.translateAndRomanize(lines, apiKey, resolvedTargetLanguage, preferredModel)
                     if (result.isSuccess) {
                         val fetchedItems = result.getOrThrow()
                         geminiLyricsDao.insertCache(
@@ -1617,7 +1633,6 @@ class LyricsRepositoryImpl @Inject constructor(
                         fetchedItems
                     } else {
                         val ex = result.exceptionOrNull() ?: IOException("Gemini translation failed")
-                        android.util.Log.e(TAG, "Gemini plain lyrics enrichment failed: ${ex.message}", ex)
                         Timber.tag(TAG).e(ex, "Gemini plain lyrics enrichment failed: %s", ex.message)
                         return@withContext Result.failure(ex)
                     }
@@ -1641,22 +1656,27 @@ class LyricsRepositoryImpl @Inject constructor(
 
             Result.success(lyrics)
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Unexpected error in enrichLyricsWithGeminiResult: ${e.message}", e)
             Timber.tag(TAG).e(e, "Unexpected error in enrichLyricsWithGeminiResult: %s", e.message)
             Result.failure(e)
         }
     }
 
-    private fun getGeminiTrackKey(song: Song): String {
-        val identifier = song.contentUriString.ifBlank { song.path.ifBlank { song.id } }
-        return getGeminiTrackKey(identifier)
+    private fun getGeminiSongPrefix(songId: String): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val digest = md.digest(songId.toByteArray(Charsets.UTF_8))
+        val hash = digest.joinToString("") { "%02x".format(it) }
+        return "gemini_${hash}_"
     }
 
-    private fun getGeminiTrackKey(identifier: String): String {
+    private fun getGeminiTrackKey(songId: String, targetLanguage: String, model: String): String {
+        val prefix = getGeminiSongPrefix(songId)
+        val normalizedLang = targetLanguage.trim().lowercase()
+        val normalizedModel = model.trim().lowercase()
+        val subKey = "$normalizedLang:$normalizedModel"
         val md = MessageDigest.getInstance("SHA-256")
-        val digest = md.digest(identifier.toByteArray(Charsets.UTF_8))
+        val digest = md.digest(subKey.toByteArray(Charsets.UTF_8))
         val hash = digest.joinToString("") { "%02x".format(it) }
-        return "gemini_$hash"
+        return "$prefix$hash"
     }
 
     private fun hashLyricsText(lines: List<String>): String {

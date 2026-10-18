@@ -434,10 +434,12 @@ fun LyricsSettingsScreen(
     }
 
     if (showGeminiModelDialog) {
-        val presetModels = remember {
+        val labelFastest = stringResource(R.string.gemini_model_fastest)
+        val labelBalanced = stringResource(R.string.gemini_model_balanced)
+        val presetModels = remember(labelFastest, labelBalanced) {
             listOf(
-                "gemini-3.5-flash-lite" to "Gemini 3.5 Flash Lite (Fastest)",
-                "gemini-3.5-flash" to "Gemini 3.5 Flash (Balanced)",
+                "gemini-3.5-flash-lite" to "Gemini 3.5 Flash Lite ($labelFastest)",
+                "gemini-3.5-flash" to "Gemini 3.5 Flash ($labelBalanced)",
                 "gemini-flash-lite-latest" to "Gemini Flash Lite Latest",
                 "gemini-flash-latest" to "Gemini Flash Latest",
                 "gemini-2.5-flash" to "Gemini 2.5 Flash",

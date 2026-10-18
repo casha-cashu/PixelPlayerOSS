@@ -63,7 +63,7 @@ class GeminiLyricsClient @Inject constructor(
         preferredModel: String? = null
     ): Result<List<GeminiLyricItem>> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
-            android.util.Log.e(TAG, "Gemini API key is blank")
+            Timber.tag(TAG).e("Gemini API key is blank")
             return@withContext Result.failure(IllegalArgumentException("Gemini API key is blank"))
         }
         if (lines.isEmpty()) {
@@ -98,7 +98,6 @@ class GeminiLyricsClient @Inject constructor(
                         val errorBody = response.body.string()
                         val parsedMessage = extractErrorMessage(errorBody)
                         val fullErrMsg = "HTTP $code: $parsedMessage"
-                        android.util.Log.e(TAG, "Gemini API ($model) failed: $fullErrMsg")
                         Timber.tag(TAG).e("Gemini API ($model) failed: %s | raw: %s", fullErrMsg, errorBody)
 
                         // If 404 (model not supported/found on endpoint), try next candidate model
@@ -112,21 +111,28 @@ class GeminiLyricsClient @Inject constructor(
 
                     val responseBody = response.body.string()
                     if (responseBody.isBlank()) {
-                        android.util.Log.e(TAG, "Gemini API returned empty response body")
+                        Timber.tag(TAG).e("Gemini API returned empty response body")
                         return@withContext Result.failure(IOException("Empty response from Gemini API"))
                     }
 
                     val parsedItems = parseGeminiResponse(responseBody)
-                    if (parsedItems != null) {
-                        android.util.Log.i(TAG, "Successfully translated ${parsedItems.size} lines using $model")
-                        return@withContext Result.success(parsedItems)
-                    } else {
-                        android.util.Log.e(TAG, "Failed to parse structured lyrics JSON: ${responseBody.take(200)}")
-                        return@withContext Result.failure(IOException("Failed to parse structured lyrics from Gemini response"))
+                    if (parsedItems == null) {
+                        Timber.tag(TAG).e("Failed to parse structured lyrics JSON: %s", responseBody.take(200))
+                        lastError = IOException("Failed to parse structured lyrics from Gemini response")
+                        return@use
                     }
+
+                    val validationError = validateParsedItems(lines, parsedItems)
+                    if (validationError != null) {
+                        Timber.tag(TAG).w("Gemini model %s validation failed: %s", model, validationError)
+                        lastError = IOException("Gemini response validation failed: $validationError")
+                        return@use
+                    }
+
+                    Timber.tag(TAG).i("Successfully translated and validated ${parsedItems.size} lines using $model")
+                    return@withContext Result.success(parsedItems)
                 }
             } catch (e: Exception) {
-                android.util.Log.e(TAG, "Gemini API network call failed ($model): ${e.message}", e)
                 Timber.tag(TAG).e(e, "Gemini API network call failed ($model): %s", e.message)
                 lastError = e
             }
@@ -232,9 +238,43 @@ class GeminiLyricsClient @Inject constructor(
             val listType = object : TypeToken<List<GeminiLyricItem>>() {}.type
             gson.fromJson<List<GeminiLyricItem>>(cleanJson, listType)
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to deserialize GeminiLyricItem list: ${text.take(200)}", e)
             Timber.tag(TAG).w(e, "Failed to deserialize GeminiLyricItem list: %s", text.take(100))
             null
         }
+    }
+
+    /**
+     * Validates that the parsed [items] correspond 1:1 in count and order to the [expectedLines].
+     * Returns null if valid, or an error description string if invalid.
+     */
+    internal fun validateParsedItems(expectedLines: List<String>, items: List<GeminiLyricItem>): String? {
+        if (items.size != expectedLines.size) {
+            return "Item count mismatch: expected ${expectedLines.size}, got ${items.size}"
+        }
+        for (i in expectedLines.indices) {
+            val expected = expectedLines[i].trim()
+            val actual = items[i].original.trim()
+            if (expected.isEmpty()) {
+                continue
+            }
+            // Strip any echoed index prefix like "[0]" from the response
+            val actualStripped = actual.removePrefix("[$i]").trim()
+            if (!actualStripped.equals(expected, ignoreCase = true) && !actual.equals(expected, ignoreCase = true)) {
+                val expectedNorm = normalizeForComparison(expected)
+                val actualNorm = normalizeForComparison(actualStripped)
+                if (expectedNorm != actualNorm && !actualNorm.contains(expectedNorm) && !expectedNorm.contains(actualNorm)) {
+                    return "Line $i mismatch: expected '$expected' but got '$actual'"
+                }
+            }
+        }
+        return null
+    }
+
+    internal fun validateLyricItems(expectedLines: List<String>, items: List<GeminiLyricItem>): Boolean {
+        return validateParsedItems(expectedLines, items) == null
+    }
+
+    private fun normalizeForComparison(text: String): String {
+        return text.filter { it.isLetterOrDigit() }.lowercase()
     }
 }

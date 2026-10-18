@@ -4889,13 +4889,15 @@ class PlayerViewModel @Inject constructor(
         lyricsStateHolder.resetSearchState()
     }
 
+    private val inFlightTranslationSongIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     fun translateLyricsViaAi() {
         val currentSong = stablePlayerState.value.currentSong ?: run {
-            android.util.Log.w("PlayerViewModel", "Gemini translate: currentSong is null")
+            Timber.tag("PlayerViewModel").w("Gemini translate: currentSong is null")
             return
         }
         val currentLyrics = stablePlayerState.value.lyrics ?: run {
-            android.util.Log.w("PlayerViewModel", "Gemini translate: lyrics are null")
+            Timber.tag("PlayerViewModel").w("Gemini translate: lyrics are null")
             viewModelScope.launch {
                 _toastEvents.emit(context.getString(R.string.no_lyrics_to_save))
             }
@@ -4908,18 +4910,25 @@ class PlayerViewModel @Inject constructor(
             }
             return
         }
-        viewModelScope.launch {
-            val apiKey = userPreferencesRepository.geminiApiKeyFlow.first()
-            if (apiKey.isNullOrBlank()) {
-                android.util.Log.w("PlayerViewModel", "Gemini API key is not configured in Settings -> Lyrics")
-                Timber.tag("PlayerViewModel").w("Gemini API key is not configured in Settings -> Lyrics")
-                _toastEvents.emit(context.getString(R.string.lyrics_translate_api_not_configured))
-                return@launch
-            }
 
-            android.util.Log.i("PlayerViewModel", "Starting Gemini lyrics translation for: ${currentSong.title}")
-            _toastEvents.emit(context.getString(R.string.lyrics_translate_progress))
+        val requestedSongId = currentSong.id
+        if (!inFlightTranslationSongIds.add(requestedSongId)) {
+            Timber.tag("PlayerViewModel").d("Gemini translate: duplicate request ignored for songId=%s", requestedSongId)
+            return
+        }
+
+        viewModelScope.launch {
             try {
+                val apiKey = userPreferencesRepository.geminiApiKeyFlow.first()
+                if (apiKey.isNullOrBlank()) {
+                    Timber.tag("PlayerViewModel").w("Gemini API key is not configured in Settings -> Lyrics")
+                    _toastEvents.emit(context.getString(R.string.lyrics_translate_api_not_configured))
+                    return@launch
+                }
+
+                Timber.tag("PlayerViewModel").i("Starting Gemini lyrics translation for: %s (id=%s)", currentSong.title, requestedSongId)
+                _toastEvents.emit(context.getString(R.string.lyrics_translate_progress))
+
                 val locale = context.resources.configuration.locales.get(0) ?: java.util.Locale.getDefault()
                 val targetLang = locale.displayLanguage.takeIf { it.isNotBlank() } ?: "English"
 
@@ -4934,22 +4943,31 @@ class PlayerViewModel @Inject constructor(
                     val hasTranslationOrRomanization = enriched.synced?.any { !it.translation.isNullOrBlank() || !it.romanization.isNullOrBlank() } == true ||
                         enriched.plain?.any { it.contains("\n") } == true
                     if (hasTranslationOrRomanization) {
-                        playbackStateHolder.updateStablePlayerState { it.copy(lyrics = enriched) }
-                        _toastEvents.emit(context.getString(R.string.lyrics_translate_success))
+                        val activeSongId = stablePlayerState.value.currentSong?.id
+                        if (activeSongId == requestedSongId) {
+                            playbackStateHolder.updateStablePlayerState { it.copy(lyrics = enriched) }
+                            _toastEvents.emit(context.getString(R.string.lyrics_translate_success))
+                        } else {
+                            Timber.tag("PlayerViewModel").d(
+                                "Gemini translation completed for songId=%s, but active song is %s; ignoring result",
+                                requestedSongId,
+                                activeSongId
+                            )
+                        }
                     } else {
                         _toastEvents.emit(context.getString(R.string.lyrics_translate_error))
                     }
                 } else {
                     val error = result.exceptionOrNull()
                     val errorMsg = error?.message ?: "Unknown error"
-                    android.util.Log.e("PlayerViewModel", "Gemini lyrics translation failed: $errorMsg", error)
-                    Timber.tag("PlayerViewModel").e(error, "Gemini lyrics translation failed")
+                    Timber.tag("PlayerViewModel").e(error, "Gemini lyrics translation failed: %s", errorMsg)
                     _toastEvents.emit("${context.getString(R.string.lyrics_translate_error)}: $errorMsg")
                 }
             } catch (e: Exception) {
-                android.util.Log.e("PlayerViewModel", "Error translating lyrics via Gemini: ${e.message}", e)
-                Timber.tag("PlayerViewModel").e(e, "Error translating lyrics via Gemini")
+                Timber.tag("PlayerViewModel").e(e, "Error translating lyrics via Gemini: %s", e.message)
                 _toastEvents.emit("${context.getString(R.string.lyrics_translate_error)}: ${e.message ?: "Unknown error"}")
+            } finally {
+                inFlightTranslationSongIds.remove(requestedSongId)
             }
         }
     }

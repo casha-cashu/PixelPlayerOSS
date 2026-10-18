@@ -16,6 +16,9 @@ interface GeminiLyricsDao {
     @Query("DELETE FROM gemini_lyrics_cache WHERE trackKey = :trackKey")
     suspend fun deleteCache(trackKey: String)
 
+    @Query("DELETE FROM gemini_lyrics_cache WHERE trackKey LIKE :prefix")
+    suspend fun deleteCacheByPrefix(prefix: String)
+
     @Query("DELETE FROM gemini_lyrics_cache")
     suspend fun clearAll()
 }

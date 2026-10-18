@@ -476,7 +476,7 @@ class LyricsRepositoryImplTest {
         val enriched = repository.enrichLyricsWithGemini(song, lyrics)
 
         assertThat(enriched.synced?.first()?.translation).isEqualTo("Bonjour")
-        coVerify(exactly = 0) { geminiClient.translateAndRomanize(any(), any(), any()) }
+        coVerify(exactly = 0) { geminiClient.translateAndRomanize(any(), any(), any(), any()) }
     }
 
     @Test
@@ -484,7 +484,7 @@ class LyricsRepositoryImplTest {
         val geminiClient = mockk<GeminiLyricsClient>(relaxed = true)
         val geminiDao = mockk<GeminiLyricsDao>(relaxed = true)
         coEvery { geminiDao.getCache(any()) } returns null
-        coEvery { geminiClient.translateAndRomanize(any(), any()) } returns Result.failure(
+        coEvery { geminiClient.translateAndRomanize(any(), any(), any(), any()) } returns Result.failure(
             java.io.IOException("Network dropped")
         )
 
@@ -504,6 +504,49 @@ class LyricsRepositoryImplTest {
 
         assertThat(enriched).isEqualTo(lyrics)
         coVerify(exactly = 0) { geminiDao.insertCache(any()) }
+    }
+
+    @Test
+    fun resetLyrics_deletesGeminiCacheForSongPrefix() = runTest {
+        val geminiDao = mockk<GeminiLyricsDao>(relaxed = true)
+        val lyricsDao = mockk<LyricsDao>(relaxed = true)
+        val repository = createRepository(
+            lyricsDao = lyricsDao,
+            geminiLyricsDao = geminiDao
+        )
+
+        repository.resetLyrics(42L)
+
+        coVerify(exactly = 1) { lyricsDao.deleteLyrics(42L) }
+        coVerify(exactly = 1) { geminiDao.deleteCacheByPrefix(match { it.startsWith("gemini_") && it.endsWith("%") }) }
+    }
+
+    @Test
+    fun enrichLyricsWithGemini_includesTargetLanguageAndModelInCacheKey() = runTest {
+        val geminiClient = mockk<GeminiLyricsClient>(relaxed = true)
+        val geminiDao = mockk<GeminiLyricsDao>(relaxed = true)
+        coEvery { geminiDao.getCache(any()) } returns null
+        coEvery { geminiClient.translateAndRomanize(any(), any(), any(), any()) } returns Result.success(
+            listOf(GeminiLyricItem(original = "Hello", romanized = "Hello", translated = "Bonjour"))
+        )
+        val userPrefs = userPreferencesRepository(
+            geminiLyricsEnabled = true,
+            geminiApiKey = "test-key",
+            geminiModel = "gemini-2.5-flash"
+        )
+        val repository = createRepository(
+            userPreferencesRepository = userPrefs,
+            geminiLyricsClient = geminiClient,
+            geminiLyricsDao = geminiDao
+        )
+        val song = testSong("99", "Title", "Artist", duration = 180_000L)
+        val lyrics = Lyrics(synced = listOf(SyncedLine(1000, "Hello")))
+
+        repository.enrichLyricsWithGeminiResult(song, lyrics, targetLanguage = "French")
+
+        val capturedEntity = io.mockk.slot<GeminiLyricsCacheEntity>()
+        coVerify(exactly = 1) { geminiDao.insertCache(capture(capturedEntity)) }
+        assertThat(capturedEntity.captured.trackKey).startsWith("gemini_")
     }
 
     private fun testContext(filesDir: File = Files.createTempDirectory("pixelplayer-lyrics-test").toFile()): Context {

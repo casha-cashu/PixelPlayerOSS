@@ -1,19 +1,22 @@
 package com.lostf1sh.pixelplayeross.data.network.gemini
 
 import com.google.gson.Gson
+import com.lostf1sh.pixelplayeross.data.model.GeminiLyricItem
 import okhttp3.OkHttpClient
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 
 class GeminiLyricsClientTest {
 
     private lateinit var client: GeminiLyricsClient
     private val gson = Gson()
 
-    @Before
+    @BeforeEach
     fun setUp() {
         client = GeminiLyricsClient(OkHttpClient(), gson)
     }
@@ -108,5 +111,46 @@ class GeminiLyricsClientTest {
         val emptyCandidates = """{ "candidates": [] }"""
         val items = client.parseGeminiResponse(emptyCandidates)
         assertNull(items)
+    }
+
+    @Test
+    fun validateLyricItems_withMatchingLinesAndOrder_returnsTrue() {
+        val lines = listOf("First line", "Second line", "Third line")
+        val items = listOf(
+            GeminiLyricItem(original = "First line", romanized = "First line", translated = "Primera línea"),
+            GeminiLyricItem(original = "Second line", romanized = "Second line", translated = "Segunda línea"),
+            GeminiLyricItem(original = "Third line", romanized = "Third line", translated = "Tercera línea")
+        )
+        assertTrue(client.validateLyricItems(lines, items))
+    }
+
+    @Test
+    fun validateLyricItems_withEchoedIndexPrefix_returnsTrue() {
+        val lines = listOf("First line", "Second line")
+        val items = listOf(
+            GeminiLyricItem(original = "[0] First line", romanized = "First line", translated = "Primera línea"),
+            GeminiLyricItem(original = "[1] Second line", romanized = "Second line", translated = "Segunda línea")
+        )
+        assertTrue(client.validateLyricItems(lines, items))
+    }
+
+    @Test
+    fun validateLyricItems_withMismatchedCount_returnsFalse() {
+        val lines = listOf("Line 1", "Line 2", "Line 3")
+        val items = listOf(
+            GeminiLyricItem(original = "Line 1", translated = "L1"),
+            GeminiLyricItem(original = "Line 2", translated = "L2")
+        )
+        assertFalse(client.validateLyricItems(lines, items))
+    }
+
+    @Test
+    fun validateLyricItems_withMismatchedOrder_returnsFalse() {
+        val lines = listOf("First line", "Second line")
+        val items = listOf(
+            GeminiLyricItem(original = "Second line", translated = "L2"),
+            GeminiLyricItem(original = "First line", translated = "L1")
+        )
+        assertFalse(client.validateLyricItems(lines, items))
     }
 }

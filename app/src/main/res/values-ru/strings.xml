@@ -284,4 +284,6 @@
     <string name="setcat_gemini_model_subtitle">Выбор модели ИИ для перевода и романизации</string>
     <string name="dialog_gemini_model_title">Выбор модели Gemini</string>
     <string name="dialog_gemini_model_custom_hint">Или введите название модели…</string>
+    <string name="gemini_model_fastest">Самая быстрая</string>
+    <string name="gemini_model_balanced">Сбалансированная</string>
 </resources>

@@ -309,5 +309,7 @@
     <string name="setcat_gemini_model_subtitle">Choose AI model for lyrics translation and romanization</string>
     <string name="dialog_gemini_model_title">Select Gemini Model</string>
     <string name="dialog_gemini_model_custom_hint">Or enter custom model name…</string>
+    <string name="gemini_model_fastest">Fastest</string>
+    <string name="gemini_model_balanced">Balanced</string>
 
 </resources>

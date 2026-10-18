@@ -22,14 +22,18 @@ class FadingPlayer(
 
     init {
         innerPlayer.addListener(object : Player.Listener {
+            override fun onVolumeChanged(volume: Float) {
+                logicalVolume = volume
+            }
+
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                // Ensure volume is restored to logical level on every track transition
-                super@FadingPlayer.setVolume(logicalVolume)
+                // Keep logicalVolume synchronized with the underlying player on track transitions
+                logicalVolume = innerPlayer.volume
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
-                    super@FadingPlayer.setVolume(logicalVolume)
+                    logicalVolume = innerPlayer.volume
                 }
             }
         })
@@ -41,16 +45,17 @@ class FadingPlayer(
     }
 
     override fun getVolume(): Float {
-        return super.getVolume()
+        return innerPlayer.volume
     }
 
     override fun play() {
-        super.setVolume(logicalVolume)
+        // Synchronize with innerPlayer volume so ReplayGain normalization is not overwritten on resume
+        logicalVolume = innerPlayer.volume
         super.play()
     }
 
     override fun pause() {
         super.pause()
-        super.setVolume(logicalVolume)
+        logicalVolume = innerPlayer.volume
     }
 }

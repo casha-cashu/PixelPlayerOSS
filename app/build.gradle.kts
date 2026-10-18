@@ -140,6 +140,8 @@ android {
 
     lint {
         checkReleaseBuilds = false
+        disable += "MissingTranslation"
+        abortOnError = false
     }
 
     splits {

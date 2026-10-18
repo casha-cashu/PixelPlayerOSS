@@ -399,26 +399,32 @@ fun FullPlayerContent(
         }
     }
 
-    val onAlbumSongSelected: (Song, Int) -> Unit = { newSong, index ->
-        playerViewModel.showAndPlaySong(
-            song = newSong,
-            contextSongs = currentPlaybackQueue,
-            queueName = currentQueueSourceName,
-            indexInQueue = index
-        )
+    val onAlbumSongSelected: (Song, Int) -> Unit = remember(playerViewModel, currentPlaybackQueue, currentQueueSourceName) {
+        { newSong, index ->
+            playerViewModel.showAndPlaySong(
+                song = newSong,
+                contextSongs = currentPlaybackQueue,
+                queueName = currentQueueSourceName,
+                indexInQueue = index
+            )
+        }
     }
 
-    val onSongMetadataQueueClick = {
-        showSongInfoBottomSheet = true
-        onShowQueueClicked()
+    val onSongMetadataQueueClick: () -> Unit = remember(onShowQueueClicked) {
+        {
+            showSongInfoBottomSheet = true
+            onShowQueueClicked()
+        }
     }
 
-    val onSongMetadataArtistClick = {
-        val resolvedArtistId = currentSongArtists.firstOrNull { it.id != 0L && it.id != -1L }?.id ?: song.artistId
-        if (currentSongArtists.size > 1) {
-            showArtistPicker = true
-        } else {
-            playerViewModel.triggerArtistNavigationFromPlayer(resolvedArtistId)
+    val onSongMetadataArtistClick: () -> Unit = remember(playerViewModel, currentSongArtists, song.artistId) {
+        {
+            val resolvedArtistId = currentSongArtists.firstOrNull { it.id != 0L && it.id != -1L }?.id ?: song.artistId
+            if (currentSongArtists.size > 1) {
+                showArtistPicker = true
+            } else {
+                playerViewModel.triggerArtistNavigationFromPlayer(resolvedArtistId)
+            }
         }
     }
 

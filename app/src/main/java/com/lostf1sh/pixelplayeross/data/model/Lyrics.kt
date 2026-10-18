@@ -1,5 +1,6 @@
 package com.lostf1sh.pixelplayeross.data.model
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 
 /**
@@ -9,6 +10,7 @@ import kotlinx.serialization.Serializable
  * @param synced List of (milliseconds, line) pairs for synced lyrics.
  * @param areFromRemote Indicates whether the lyrics were fetched from a remote source.
  */
+@Immutable
 @Serializable
 data class Lyrics(
     val plain: List<String>? = null,
@@ -16,6 +18,7 @@ data class Lyrics(
     val areFromRemote: Boolean = false
 )
 
+@Immutable
 @Serializable
 data class SyncedLine(
     val time: Int,
@@ -25,6 +28,7 @@ data class SyncedLine(
     val romanization: String? = null
 )
 
+@Immutable
 @Serializable
 data class SyncedWord(
     val time: Int,

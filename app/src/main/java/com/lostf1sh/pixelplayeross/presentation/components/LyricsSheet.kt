@@ -19,8 +19,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.util.fastFirstOrNull
 import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -835,7 +837,8 @@ fun LyricsSheet(
                             ) {
                                 itemsIndexed(
                                     items = plain,
-                                    key = { index, line -> "$index-$line" }
+                                    key = { index, line -> "$index-$line" },
+                                    contentType = { _, _ -> "plain_line" }
                                 ) { index, line ->
                                     PlainLyricsLine(
                                         line = line,
@@ -1215,11 +1218,10 @@ fun SyncedLyricsList(
             resolveCurrentLineIndex(lines = lines, position = pos)
         }
     }
-    val hasWordTimings = remember(lines) { lines.any { !it.words.isNullOrEmpty() } }
-    val position = if (hasWordTimings) {
-        positionOverrideMs ?: (playbackPositionState.value + lyricsSyncOffset).coerceAtLeast(0L)
-    } else {
-        0L
+    val positionProvider: () -> Long = remember(playbackPositionState, lyricsSyncOffset, positionOverrideMs) {
+        {
+            positionOverrideMs ?: (playbackPositionState.value + lyricsSyncOffset).coerceAtLeast(0L)
+        }
     }
     var hasAlignedInitialLine by remember(lines) { mutableStateOf(false) }
     var lastAutoScrolledLineIndex by remember(lines) { mutableIntStateOf(-1) }
@@ -1320,20 +1322,29 @@ fun SyncedLyricsList(
             ) {
                 itemsIndexed(
                     items = lines,
-                    key = { index, item -> "${item.time}_$index" }
+                    key = { index, item -> "${item.time}_$index" },
+                    contentType = { _, line -> if (line.line.isNotBlank()) "line" else "bubble" }
                 ) { index, line ->
                     val nextTime = lines.getOrNull(index + 1)?.time ?: Int.MAX_VALUE
                     val distanceFromCurrent = if (currentLineIndex != -1) abs(currentLineIndex - index) else 100
                     val isCurrent = distanceFromCurrent == 0
-                    val linePosition = if (isCurrent && !line.words.isNullOrEmpty()) position else 0L
+                    val currentLinePositionProvider = if (isCurrent && !line.words.isNullOrEmpty()) positionProvider else null
 
                     val parallaxModifier = if (useAnimatedLyrics) {
                         Modifier.graphicsLayer {
                             val currentLayoutInfo = listState.layoutInfo
-                            val lineItemInfo = currentLayoutInfo.visibleItemsInfo.find { it.index == index }
+                            val viewportEnd = currentLayoutInfo.viewportEndOffset
+                            if (viewportEnd <= 0) return@graphicsLayer
+                            val viewportCenter = viewportEnd / 2f
+                            val visibleItems = currentLayoutInfo.visibleItemsInfo
+                            val firstIndex = visibleItems.firstOrNull()?.index ?: -1
+                            val lineItemInfo = if (firstIndex in 0..index && (index - firstIndex) < visibleItems.size) {
+                                val candidate = visibleItems[index - firstIndex]
+                                if (candidate.index == index) candidate else visibleItems.fastFirstOrNull { it.index == index }
+                            } else {
+                                visibleItems.fastFirstOrNull { it.index == index }
+                            }
                             val itemCenter = lineItemInfo?.let { it.offset + (it.size / 2f) }
-                            val viewportCenter = currentLayoutInfo.viewportEndOffset / 2f
-
                             val distanceFromCenter = itemCenter?.let { it - viewportCenter } ?: 0f
 
                             val maxTranslation = 40f
@@ -1346,7 +1357,8 @@ fun SyncedLyricsList(
                         LyricLineRow(
                             line = line,
                             nextTime = nextTime,
-                            position = linePosition,
+                            position = 0L,
+                            currentPositionProvider = currentLinePositionProvider,
                             distanceFromCurrent = distanceFromCurrent,
                             useAnimatedLyrics = useAnimatedLyrics,
                             animatedLyricsBlurEnabled = animatedLyricsBlurEnabled,
@@ -1391,7 +1403,8 @@ fun SyncedLyricsList(
 fun LyricLineRow(
     line: SyncedLine,
     nextTime: Int,
-    position: Long,
+    position: Long = 0L,
+    currentPositionProvider: (() -> Long)? = null,
     distanceFromCurrent: Int = 100,
     useAnimatedLyrics: Boolean = false,
     animatedLyricsBlurEnabled: Boolean = true,
@@ -1573,11 +1586,12 @@ fun LyricLineRow(
             }
         }
     } else {
-        val wordVisualStates by remember(position, sanitizedWords, line.time, lineEndTime) {
+        val wordVisualStates by remember(sanitizedWords, line.time, lineEndTime, currentPositionProvider, position) {
             derivedStateOf {
+                val resolvedPos = currentPositionProvider?.invoke() ?: position
                 resolveWordVisualStates(
                     words = requireNotNull(sanitizedWords),
-                    positionMs = position,
+                    positionMs = resolvedPos,
                     lineStartTimeMs = line.time.toLong(),
                     lineEndTimeMs = lineEndTime
                 )
@@ -1827,6 +1841,7 @@ internal fun sanitizeSyncedWords(words: List<SyncedWord>): List<SyncedWord> =
         }
     }
 
+@Immutable
 internal data class SyncedWordCluster(
     val startIndex: Int,
     val words: List<SyncedWord>
@@ -1864,11 +1879,15 @@ internal enum class LyricWordPhase {
     Completed
 }
 
+@Immutable
 internal data class LyricWordVisualState(
     val phase: LyricWordPhase,
     /** Timestamp-derived progress for the short active-word emphasis, from 0 to 1. */
     val progress: Float
 )
+
+private val FutureWordVisualState = LyricWordVisualState(LyricWordPhase.Future, 0f)
+private val CompletedWordVisualState = LyricWordVisualState(LyricWordPhase.Completed, 1f)
 
 private const val MAX_WORD_EMPHASIS_DURATION_MS = 240L
 private const val ACTIVE_WORD_SCALE_DELTA = 0.08f
@@ -1885,12 +1904,12 @@ internal fun resolveWordVisualStates(
 ): List<LyricWordVisualState> {
     if (words.isEmpty()) return emptyList()
     if (positionMs < lineStartTimeMs || positionMs >= lineEndTimeMs) {
-        return List(words.size) { LyricWordVisualState(LyricWordPhase.Future, 0f) }
+        return List(words.size) { FutureWordVisualState }
     }
 
     val activeIndex = words.indexOfLast { it.time.toLong() <= positionMs }
     if (activeIndex < 0) {
-        return List(words.size) { LyricWordVisualState(LyricWordPhase.Future, 0f) }
+        return List(words.size) { FutureWordVisualState }
     }
 
     val activeWordStart = words[activeIndex].time.toLong()
@@ -1908,9 +1927,9 @@ internal fun resolveWordVisualStates(
 
     return List(words.size) { index ->
         when {
-            index < activeIndex -> LyricWordVisualState(LyricWordPhase.Completed, 1f)
+            index < activeIndex -> CompletedWordVisualState
             index == activeIndex -> LyricWordVisualState(LyricWordPhase.Active, activeProgress)
-            else -> LyricWordVisualState(LyricWordPhase.Future, 0f)
+            else -> FutureWordVisualState
         }
     }
 }

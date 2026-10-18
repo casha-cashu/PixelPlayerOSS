@@ -193,7 +193,7 @@ fun LibrarySongsTab(
             if (count == 0) {
                 false
             } else {
-                currentSongListIndex in first..(first + count)
+                currentSongListIndex in first until (first + count)
             }
         }
             .distinctUntilChanged()

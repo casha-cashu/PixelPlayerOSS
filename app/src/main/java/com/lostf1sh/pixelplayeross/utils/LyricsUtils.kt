@@ -1205,6 +1205,7 @@ fun BubblesLine(
     val density = LocalDensity.current
     val dotRadius = remember(density) { with(density) { 5.dp.toPx() } }
     val dotSpacing = remember(density) { with(density) { 18.dp.toPx() } }
+    val maxBouncePx = remember(density) { with(density) { 6.dp.toPx() } }
 
     val clickableModifier = if (onClick != null) {
         Modifier
@@ -1234,7 +1235,7 @@ fun BubblesLine(
                 val phase = (waveProgress + i * 0.22f) % 1f
                 val rawWave = kotlin.math.sin(phase * 2 * Math.PI.toFloat()).coerceAtLeast(0f)
                 val wave = rawWave * waveWeight
-                val bounceY = wave * 6.dp.toPx()
+                val bounceY = wave * maxBouncePx
                 val pulseScale = 1f + wave * 0.3f
                 drawCircle(
                     color = dotColor,

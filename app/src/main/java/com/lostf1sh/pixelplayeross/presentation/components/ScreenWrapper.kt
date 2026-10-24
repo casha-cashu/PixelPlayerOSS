@@ -1,8 +1,12 @@
 package com.lostf1sh.pixelplayeross.presentation.components
 
 import androidx.annotation.OptIn
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -11,13 +15,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
@@ -30,22 +34,30 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
 import com.lostf1sh.pixelplayeross.presentation.navigation.isMainRootRoute
 
-
 @OptIn(UnstableApi::class)
 @Composable
 fun ScreenWrapper(
     navController: NavController,
     playerViewModel: PlayerViewModel,
     modifier: Modifier = Modifier,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     content: @Composable () -> Unit
 ) {
-    ScreenSurface(navController = navController, modifier = modifier, content = content)
+    ScreenSurface(
+        navController = navController,
+        playerViewModel = playerViewModel,
+        modifier = modifier,
+        animatedVisibilityScope = animatedVisibilityScope,
+        content = content
+    )
 }
 
 @Composable
 internal fun ScreenSurface(
     navController: NavController,
+    playerViewModel: PlayerViewModel,
     modifier: Modifier = Modifier,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     content: @Composable () -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -88,19 +100,51 @@ internal fun ScreenSurface(
     val previousEntryId = navController.previousBackStackEntry?.id.also { _ -> currentBackStackEntry }
     val shouldDim = myEntry != null && previousEntryId == myEntry.id
 
+    val transition = animatedVisibilityScope?.transition
+
     val targetRadius = if (shouldRunDepthEffects && !isResumed) 32f else 0f
-    val cornerRadius by animateFloatAsState(
-        targetValue = targetRadius,
-        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
-        label = "cornerRadius"
-    )
+    val cornerRadius = if (transition != null) {
+        val animatedValue by transition.animateFloat(
+            transitionSpec = { tween(durationMillis = 350, easing = FastOutSlowInEasing) },
+            label = "cornerRadius"
+        ) { state ->
+            if (shouldRunDepthEffects && (state == EnterExitState.PostExit || state == EnterExitState.PreEnter)) {
+                32f
+            } else {
+                0f
+            }
+        }
+        animatedValue
+    } else {
+        val animatedValue by animateFloatAsState(
+            targetValue = targetRadius,
+            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+            label = "cornerRadius"
+        )
+        animatedValue
+    }
 
     val targetDim = if (shouldRunDepthEffects && shouldDim) 0.4f else 0f
-    val dimAlpha by animateFloatAsState(
-        targetValue = targetDim,
-        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
-        label = "dimAlpha"
-    )
+    val dimAlpha = if (transition != null) {
+        val animatedValue by transition.animateFloat(
+            transitionSpec = { tween(durationMillis = 350, easing = CubicBezierEasing(0.5f, 0f, 0.8f, 0.2f)) },
+            label = "dimAlpha"
+        ) { state ->
+            if (shouldRunDepthEffects && shouldDim && (state == EnterExitState.PostExit || state == EnterExitState.PreEnter)) {
+                0.4f
+            } else {
+                0f
+            }
+        }
+        animatedValue
+    } else {
+        val animatedValue by animateFloatAsState(
+            targetValue = targetDim,
+            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+            label = "dimAlpha"
+        )
+        animatedValue
+    }
 
     Box(
         modifier = modifier

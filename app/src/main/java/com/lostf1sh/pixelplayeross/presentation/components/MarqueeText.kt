@@ -1,6 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.components
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MarqueeSpacing
@@ -18,11 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -95,34 +92,36 @@ fun AutoScrollingText(
                     isScrolling = true
                 }
 
-                val animatedLeftGradientStartColor by animateColorAsState(
-                    targetValue = if (isScrolling) Color.Transparent else gradientEdgeColor,
+                val animatedLeftGradientAlpha by animateFloatAsState(
+                    targetValue = if (isScrolling) 1f else 0f,
                     animationSpec = tween(durationMillis = fadeAnimationDuration),
-                    label = "LeftGradientStartColor"
+                    label = "LeftGradientAlpha"
                 )
 
                 Box(
                     modifier = Modifier
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                         .drawWithContent {
                             drawContent()
                             val gradientWidthPx = gradientWidth.toPx()
 
+                            if (animatedLeftGradientAlpha > 0.001f) {
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            gradientEdgeColor.copy(alpha = gradientEdgeColor.alpha * animatedLeftGradientAlpha),
+                                            Color.Transparent
+                                        ),
+                                        startX = 0f,
+                                        endX = gradientWidthPx
+                                    )
+                                )
+                            }
                             drawRect(
                                 brush = Brush.horizontalGradient(
-                                    colors = listOf(animatedLeftGradientStartColor, gradientEdgeColor),
-                                    startX = 0f,
-                                    endX = gradientWidthPx
-                                ),
-                                blendMode = BlendMode.DstIn
-                            )
-                            drawRect(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(gradientEdgeColor, Color.Transparent),
+                                    colors = listOf(Color.Transparent, gradientEdgeColor),
                                     startX = size.width - gradientWidthPx,
                                     endX = size.width
-                                ),
-                                blendMode = BlendMode.DstIn
+                                )
                             )
                         }
                 ) {
@@ -143,17 +142,15 @@ fun AutoScrollingText(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                         .drawWithContent {
                             drawContent()
                             val gradientWidthPx = gradientWidth.toPx()
                             drawRect(
                                 brush = Brush.horizontalGradient(
-                                    colors = listOf(gradientEdgeColor, Color.Transparent),
+                                    colors = listOf(Color.Transparent, gradientEdgeColor),
                                     startX = size.width - gradientWidthPx,
                                     endX = size.width
-                                ),
-                                blendMode = BlendMode.DstIn
+                                )
                             )
                         }
                 ) {

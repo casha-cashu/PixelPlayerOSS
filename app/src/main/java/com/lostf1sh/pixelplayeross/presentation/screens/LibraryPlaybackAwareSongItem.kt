@@ -35,40 +35,28 @@ internal fun LibraryPlaybackAwareSongItem(
     isSelected: Boolean = false,
     selectionIndex: Int? = null,
     isSelectionMode: Boolean = false,
-    isCurrentSong: Boolean? = null,
-    isPlaying: Boolean? = null,
     onLongPress: () -> Unit = {},
     onMoreOptionsClick: (Song) -> Unit,
     onClick: () -> Unit
 ) {
-    val effectiveIsCurrentSong: Boolean
-    val effectiveIsPlaying: Boolean
-
-    if (isCurrentSong != null && isPlaying != null) {
-        effectiveIsCurrentSong = isCurrentSong
-        effectiveIsPlaying = isPlaying
-    } else {
-        val playbackUiState by remember(song.id, playerViewModel) {
-            playerViewModel.stablePlayerState
-                .map { state ->
-                    val isCurrent = state.currentSong?.id == song.id
-                    LibrarySongPlaybackUiState(
-                        isCurrentSong = isCurrent,
-                        isPlaying = isCurrent && state.isPlaying
-                    )
-                }
-                .distinctUntilChanged()
-        }.collectAsStateWithLifecycle(initialValue = LibrarySongPlaybackUiState())
-        effectiveIsCurrentSong = playbackUiState.isCurrentSong
-        effectiveIsPlaying = playbackUiState.isPlaying
-    }
+    val playbackUiState by remember(song.id, playerViewModel) {
+        playerViewModel.stablePlayerState
+            .map { state ->
+                val isCurrent = state.currentSong?.id == song.id
+                LibrarySongPlaybackUiState(
+                    isCurrentSong = isCurrent,
+                    isPlaying = isCurrent && state.isPlaying
+                )
+            }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = LibrarySongPlaybackUiState())
 
     EnhancedSongListItem(
         modifier = modifier,
         song = song,
         customShape = customShape,
-        isPlaying = effectiveIsPlaying,
-        isCurrentSong = effectiveIsCurrentSong,
+        isPlaying = playbackUiState.isPlaying,
+        isCurrentSong = playbackUiState.isCurrentSong,
         isLoading = false,
         albumArtSize = albumArtSize,
         showAlbumArt = showAlbumArt,

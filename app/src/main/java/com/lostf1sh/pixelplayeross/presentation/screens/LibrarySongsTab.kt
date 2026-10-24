@@ -114,12 +114,6 @@ fun LibrarySongsTab(
             .distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = null)
 
-    val isPlayerPlaying by remember(playerViewModel) {
-        playerViewModel.stablePlayerState
-            .map { it.isPlaying }
-            .distinctUntilChanged()
-    }.collectAsStateWithLifecycle(initialValue = false)
-
     val currentSongListIndex by remember(currentSongId) {
         derivedStateOf {
             if (currentSongId == null) -1
@@ -325,8 +319,6 @@ fun LibrarySongsTab(
                                 
                                 if (song != null) {
                                     val isSelected = selectedSongIds.contains(song.id)
-                                    val isCurrent = song.id == currentSongId
-                                    val isPlaying = isCurrent && isPlayerPlaying
                                     
                                     val rememberedOnMoreOptionsClick: (Song) -> Unit = remember(onMoreOptionsClick) {
                                         { songFromListItem -> onMoreOptionsClick(songFromListItem) }
@@ -354,8 +346,6 @@ fun LibrarySongsTab(
                                         isSelectionMode = isSelectionMode,
                                         selectionIndex = if (isSelectionMode) getSelectionIndex(song.id) else null,
                                         customShape = itemShape,
-                                        isCurrentSong = isCurrent,
-                                        isPlaying = isPlaying,
                                         onLongPress = rememberedOnLongPress,
                                         onMoreOptionsClick = rememberedOnMoreOptionsClick,
                                         onClick = rememberedOnClick

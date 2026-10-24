@@ -2618,12 +2618,7 @@ class PlayerViewModel @Inject constructor(
         }
         syncPlaybackPositionFromPlayer(mediaItem.mediaId, currentPosition)
 
-        song?.let { currentSongValue ->
-            viewModelScope.launch {
-                val uri = currentSongValue.albumArtUriString?.toUri()
-                val currentUri = currentSongValue.albumArtUriString
-                themeStateHolder.extractAndGenerateColorScheme(uri, currentUri)
-            }
+        song?.let {
             loadLyricsForCurrentSong()
         }
     }
@@ -3007,22 +3002,6 @@ class PlayerViewModel @Inject constructor(
             setPreparingSong(song.id)
         } else {
             setPreparingSong(null)
-        }
-        viewModelScope.launch(dispatchers.io) {
-            val albumArtUri = song.albumArtUriString
-            if (albumArtUri.isNullOrBlank()) {
-                themeStateHolder.extractAndGenerateColorScheme(
-                    albumArtUriAsUri = null,
-                    currentSongUriString = null,
-                    isPreload = false
-                )
-            } else {
-                themeStateHolder.extractAndGenerateColorScheme(
-                    albumArtUriAsUri = albumArtUri.toUri(),
-                    currentSongUriString = albumArtUri,
-                    isPreload = false
-                )
-            }
         }
     }
 

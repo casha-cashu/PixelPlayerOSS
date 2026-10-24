@@ -1,7 +1,6 @@
 package com.lostf1sh.pixelplayeross.presentation.components.subcomps
 
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -145,24 +144,37 @@ fun EnhancedSongListItem(
     val isHighlighted = isCurrentSong && !isLoading
     val colors = MaterialTheme.colorScheme
 
-    val highlightProgress by animateFloatAsState(
-        targetValue = if (isHighlighted) 1f else 0f,
-        animationSpec = tween(durationMillis = 350),
-        label = "highlightProgress"
-    )
-    val selectionVisualProgress by animateFloatAsState(
-        targetValue = if (isSelected) 1f else 0f,
-        animationSpec = tween(durationMillis = 250),
-        label = "selectionVisualProgress"
-    )
-    val selectionScaleProgress by animateFloatAsState(
-        targetValue = if (isSelected) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+    val transition = updateTransition(
+        targetState = EnhancedSongAnimationTarget(
+            isHighlighted = isHighlighted,
+            isSelected = isSelected
         ),
-        label = "selectionScaleProgress"
+        label = "EnhancedSongListItemTransition"
     )
+
+    val highlightProgress by transition.animateFloat(
+        transitionSpec = { tween(durationMillis = 350) },
+        label = "highlightProgress"
+    ) { state ->
+        if (state.isHighlighted) 1f else 0f
+    }
+    val selectionVisualProgress by transition.animateFloat(
+        transitionSpec = { tween(durationMillis = 250) },
+        label = "selectionVisualProgress"
+    ) { state ->
+        if (state.isSelected) 1f else 0f
+    }
+    val selectionScaleProgress by transition.animateFloat(
+        transitionSpec = {
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            )
+        },
+        label = "selectionScaleProgress"
+    ) { state ->
+        if (state.isSelected) 1f else 0f
+    }
 
     val isAnimating = highlightProgress > 0.001f || selectionVisualProgress > 0.001f
 

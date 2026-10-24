@@ -99,8 +99,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.Hyphens
-import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -1518,10 +1516,8 @@ fun LyricLineRow(
 
     val secondaryStyle = remember(style) {
         style.copy(
-            fontSize = (style.fontSize.value * 0.72f).sp,
-            fontWeight = FontWeight.Normal,
-            lineBreak = LineBreak.Paragraph,
-            hyphens = Hyphens.None
+            fontSize = (style.fontSize.value * 0.75f).sp,
+            fontWeight = FontWeight.Normal
         )
     }
 
@@ -1555,7 +1551,6 @@ fun LyricLineRow(
                 color = lineColor,
                 fontWeight = FontWeight.Bold,
                 textAlign = textAlign,
-                overflow = TextOverflow.Clip,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -1565,7 +1560,6 @@ fun LyricLineRow(
                     style = secondaryStyle,
                     color = romanizationColor,
                     textAlign = textAlign,
-                    overflow = TextOverflow.Clip,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp)
@@ -1578,7 +1572,6 @@ fun LyricLineRow(
                     style = secondaryStyle,
                     color = translationColor,
                     textAlign = textAlign,
-                    overflow = TextOverflow.Clip,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 2.dp)
@@ -1638,7 +1631,6 @@ fun LyricLineRow(
                     style = secondaryStyle,
                     color = romanizationColor,
                     textAlign = textAlign,
-                    overflow = TextOverflow.Clip,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
@@ -1649,7 +1641,6 @@ fun LyricLineRow(
                     style = secondaryStyle,
                     color = translationColor,
                     textAlign = textAlign,
-                    overflow = TextOverflow.Clip,
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
@@ -1677,7 +1668,6 @@ private fun LyricWordSpan(
         style = style,
         color = color,
         fontWeight = FontWeight.Bold,
-        overflow = TextOverflow.Clip,
         modifier = modifier.graphicsLayer {
             scaleX = scale
             scaleY = scale
@@ -1739,10 +1729,8 @@ fun PlainLyricsLine(
 
     val translationStyle = remember(style) {
         style.copy(
-            fontSize = (style.fontSize.value * 0.72f).sp,
-            fontWeight = FontWeight.Normal,
-            lineBreak = LineBreak.Paragraph,
-            hyphens = Hyphens.None
+            fontSize = (style.fontSize.value * 0.75f).sp,
+            fontWeight = FontWeight.Normal
         )
     }
     val translationColor = LocalContentColor.current.copy(alpha = 0.45f)
@@ -1753,9 +1741,7 @@ fun PlainLyricsLine(
                 text = primaryText,
                 style = style,
                 color = LocalContentColor.current.copy(alpha = 0.7f),
-                fontWeight = FontWeight.Bold,
                 textAlign = textAlign,
-                overflow = TextOverflow.Clip,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -1765,7 +1751,6 @@ fun PlainLyricsLine(
                     style = translationStyle,
                     color = translationColor,
                     textAlign = textAlign,
-                    overflow = TextOverflow.Clip,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp)
@@ -1778,7 +1763,6 @@ fun PlainLyricsLine(
                     style = translationStyle,
                     color = translationColor,
                     textAlign = textAlign,
-                    overflow = TextOverflow.Clip,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = if (showRomanization && romanizationText.isNotBlank()) 2.dp else 4.dp)
@@ -1811,10 +1795,7 @@ private fun TextStyle.withLyricsFontSize(fontSizeSp: Float): TextStyle {
     }
     return copy(
         fontSize = fontSizeSp.sp,
-        lineHeight = (fontSizeSp * lineHeightRatio).sp,
-        fontWeight = FontWeight.Bold,
-        lineBreak = LineBreak.Paragraph,
-        hyphens = Hyphens.None
+        lineHeight = (fontSizeSp * lineHeightRatio).sp
     )
 }
 

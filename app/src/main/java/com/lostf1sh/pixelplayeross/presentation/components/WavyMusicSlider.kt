@@ -256,9 +256,9 @@ fun WavyMusicSlider(
                                 val waveEndDrawX = activeTrackVisualEnd.coerceAtLeast(waveStartDrawX)
                                 if (waveEndDrawX > waveStartDrawX) {
                                     val periodPx = ((2 * PI) / waveFrequency).toFloat()
-                                    val samplesPerCycle = 20f
+                                    val samplesPerCycle = 12f
                                     val waveStep = (periodPx / samplesPerCycle)
-                                        .coerceAtLeast(1.2f)
+                                        .coerceAtLeast(2.4f)
                                         .coerceAtMost(trackHeightPx)
 
                                     fun yAt(x: Float): Float {

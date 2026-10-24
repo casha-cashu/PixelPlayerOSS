@@ -1003,8 +1003,8 @@ class DualPlayerEngine @Inject constructor(
                 .setBufferDurationsMsForStreaming(
                     15_000,
                     30_000,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                    1_000,
+                    5_000
                 )
                 .setBufferDurationsMsForLocalPlayback(
                     15_000,
@@ -1019,8 +1019,8 @@ class DualPlayerEngine @Inject constructor(
                 .setBufferDurationsMsForStreaming(
                     30_000,
                     60_000,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                    1_000,
+                    5_000
                 )
                 .setBufferDurationsMsForLocalPlayback(
                     30_000,

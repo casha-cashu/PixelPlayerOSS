@@ -1,6 +1,8 @@
 package com.lostf1sh.pixelplayeross.presentation.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.foundation.clickable
@@ -62,6 +64,18 @@ fun AlbumCarouselSection(
         initialPage = initialIndex,
         pageCount = { queue.size }
     )
+
+    // Snappy, critically-damped (no-overshoot) spring for programmatic skip scrolls.
+    // The previous default was an expressive bouncy spring whose long settle tail produced
+    // many frames of per-item measure/clip work, reading as "laggy".
+    // A no-bounce spring snaps in and settles fast, matching the native feel while cutting
+    // the number of expensive carousel layout frames.
+    val carouselAnimationSpec = remember {
+        spring<Float>(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    }
 
     val targetSize = remember(albumArtQuality) {
         if (albumArtQuality.maxSize == 0) SafeOriginalAlbumArtSize
@@ -144,7 +158,7 @@ fun AlbumCarouselSection(
                 if (isShiftOnly) {
                     carouselState.pagerState.scrollToPage(effectiveTargetIndex)
                 } else {
-                    carouselState.animateScrollToItem(effectiveTargetIndex)
+                    carouselState.animateScrollToItem(effectiveTargetIndex, animationSpec = carouselAnimationSpec)
                 }
             } finally {
                 ownScrollsInFlight--

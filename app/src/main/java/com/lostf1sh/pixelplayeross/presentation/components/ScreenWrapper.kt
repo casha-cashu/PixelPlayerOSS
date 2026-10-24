@@ -106,11 +106,7 @@ internal fun ScreenSurface(
         modifier = modifier
             .fillMaxSize()
             .graphicsLayer {
-                compositingStrategy = if (shouldRunDepthEffects) {
-                    CompositingStrategy.Offscreen
-                } else {
-                    CompositingStrategy.Auto
-                }
+                compositingStrategy = CompositingStrategy.Auto
                 if (shouldRunDepthEffects && cornerRadius > 0.5f) {
                     this.shape = RoundedCornerShape(cornerRadius.dp)
                     this.clip = true

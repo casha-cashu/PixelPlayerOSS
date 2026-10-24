@@ -65,6 +65,25 @@ private val EMBEDDED_LYRICS_KEYS = listOf("LYRICS", "SYNCEDLYRICS", "TTML", "UNS
 
 private fun Lyrics.isValid(): Boolean = !synced.isNullOrEmpty() || !plain.isNullOrEmpty()
 
+private const val REPLACEMENT_CHARACTER = '\uFFFD'
+
+/**
+ * Whether any text these lyrics show was damaged into U+FFFD: a line, its timed words, its
+ * translation or its backing vocals, which [Lyrics.plain] leaves out when the main line is sung.
+ */
+internal fun Lyrics.containsReplacementCharacter(): Boolean =
+    plain.orEmpty().any { REPLACEMENT_CHARACTER in it } ||
+        synced.orEmpty().any { it.containsReplacementCharacter() }
+
+private fun SyncedLine.containsReplacementCharacter(): Boolean =
+    REPLACEMENT_CHARACTER in line ||
+        translation.orEmpty().contains(REPLACEMENT_CHARACTER) ||
+        words.orEmpty().any { REPLACEMENT_CHARACTER in it.word } ||
+        background?.let { backing ->
+            REPLACEMENT_CHARACTER in backing.text ||
+                backing.words.orEmpty().any { REPLACEMENT_CHARACTER in it.word }
+        } == true
+
 internal fun parseBestEmbeddedLyricsField(propertyMap: Map<String, Array<String>>?): Lyrics? {
     var firstPlainLyrics: Lyrics? = null
 
@@ -125,8 +144,8 @@ class LyricsRepositoryImpl @Inject constructor(
     private val lyricsDao: com.lostf1sh.pixelplayeross.data.database.LyricsDao,
     private val okHttpClient: OkHttpClient,
     private val userPreferencesRepository: UserPreferencesRepository,
-    private val geminiLyricsClient: GeminiLyricsClient,
-    private val geminiLyricsDao: GeminiLyricsDao
+    private val geminiLyricsClient: GeminiLyricsClient? = null,
+    private val geminiLyricsDao: GeminiLyricsDao? = null
 ) : LyricsRepository {
 
 
@@ -357,8 +376,16 @@ class LyricsRepositoryImpl @Inject constructor(
         }
 
         if (!forceRefresh) {
-            loadStoredLyrics(song, cacheKey, includeMemoryCache = false)?.let { stored ->
-                val enriched = enrichLyricsWithGemini(song, stored.first)
+            loadStoredLyrics(song, cacheKey, includeMemoryCache = false)?.let { (storedLyrics, rawLyrics) ->
+                // A copy damaged by an old build yields to a clean embedded tag or .lrc file, but
+                // is still shown when there is none: it never starts a remote search that could
+                // replace lyrics the user picked.
+                val lyrics = if (rawLyrics.contains(REPLACEMENT_CHARACTER)) {
+                    findCleanLocalLyrics(song, sourcePreference) ?: storedLyrics
+                } else {
+                    storedLyrics
+                }
+                val enriched = enrichLyricsWithGemini(song, lyrics)
                 lyricsCache.put(cacheKey, enriched)
                 Timber.tag(TAG).d("===== RETURNING STORED LYRICS WITHOUT REMOTE FETCH =====")
                 return@withContext enriched
@@ -921,12 +948,12 @@ class LyricsRepositoryImpl @Inject constructor(
             lyricsDir.mkdirs()
 
             val wordByWordLyrics = lyrics.synced
-                ?.takeIf { lines -> lines.any { !it.words.isNullOrEmpty() } }
-                ?.let(::toWordByWordLrc)
+                ?.takeIf { it.hasWordTimings() }
+                ?.let { LyricsUtils.toEnhancedLrc(it) }
 
             val lyricsData = LyricsData(
                 plainLyrics = lyrics.plain?.joinToString("\n"),
-                syncedLyrics = lyrics.synced?.joinToString("\n") { "[${formatTimestamp(it.time)}]${it.line}" },
+                syncedLyrics = lyrics.synced?.let { LyricsUtils.toEnhancedLrc(it, includeWordTimings = false) },
                 wordByWordLyrics = wordByWordLyrics
             )
 
@@ -976,30 +1003,8 @@ class LyricsRepositoryImpl @Inject constructor(
         return null
     }
 
-    private fun formatTimestamp(timeMs: Int): String {
-        val totalSeconds = timeMs / 1000
-        val minutes = totalSeconds / 60
-        val seconds = totalSeconds % 60
-        val hundredths = (timeMs % 1000) / 10
-        return String.format(Locale.US, "%02d:%02d.%02d", minutes, seconds, hundredths)
-    }
-
-    private fun toWordByWordLrc(lines: List<SyncedLine>): String {
-        return lines.joinToString("\n") { line ->
-            val linePrefix = "[${formatTimestamp(line.time)}]"
-            val words = line.words
-            if (words.isNullOrEmpty()) {
-                linePrefix + line.line
-            } else {
-                val wordsPart = words.mapIndexed { index, word ->
-                    val separator = if (index > 0 && word.startsNewWord) " " else ""
-                    "$separator<${formatTimestamp(word.time)}>${word.word}"
-                }
-                    .joinToString("")
-                linePrefix + wordsPart
-            }
-        }
-    }
+    private fun List<SyncedLine>.hasWordTimings(): Boolean =
+        any { !it.words.isNullOrEmpty() || !it.background?.words.isNullOrEmpty() }
 
     private fun looksLikeFlattenedWordByWordCache(lyrics: Lyrics): Boolean {
         val synced = lyrics.synced ?: return false
@@ -1059,11 +1064,22 @@ class LyricsRepositoryImpl @Inject constructor(
         cacheKey: String,
         includeMemoryCache: Boolean
     ): Pair<Lyrics, String>? = withContext(Dispatchers.IO) {
+        // Builds before 0.3.0-alpha.19 "repaired" accented text such as Vietnamese into U+FFFD
+        // and could save it back. Such a copy is only used when no clean one is stored.
+        var damagedCopy: Pair<Lyrics, String>? = null
+        fun storedCopy(rawLyrics: String): Pair<Lyrics, String>? {
+            val parsed = parseStoredLyrics(rawLyrics) ?: return null
+            if (!rawLyrics.contains(REPLACEMENT_CHARACTER)) return parsed to rawLyrics
+            Timber.tag(TAG).w("Stored lyrics contain U+FFFD replacement characters; looking for a clean copy")
+            if (damagedCopy == null) damagedCopy = parsed to rawLyrics
+            return null
+        }
+
         song.lyrics
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?.let { rawLyrics ->
-                parseStoredLyrics(rawLyrics)?.let { return@withContext it to rawLyrics }
+                storedCopy(rawLyrics)?.let { return@withContext it }
             }
 
         song.id.toLongOrNull()
@@ -1071,7 +1087,7 @@ class LyricsRepositoryImpl @Inject constructor(
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?.let { rawLyrics ->
-                parseStoredLyrics(rawLyrics)?.let { return@withContext it to rawLyrics }
+                storedCopy(rawLyrics)?.let { return@withContext it }
             }
 
         readLyricsJsonCache(song)
@@ -1079,7 +1095,7 @@ class LyricsRepositoryImpl @Inject constructor(
             ?.let { data ->
                 val rawLyrics = data.wordByWordLyrics ?: data.syncedLyrics ?: data.plainLyrics
                 if (!rawLyrics.isNullOrBlank()) {
-                    parseStoredLyrics(rawLyrics)?.let { return@withContext it to rawLyrics }
+                    storedCopy(rawLyrics)?.let { return@withContext it }
                 }
             }
 
@@ -1091,7 +1107,35 @@ class LyricsRepositoryImpl @Inject constructor(
             }
         }
 
-        null
+        damagedCopy
+    }
+
+    /**
+     * A clean copy of the lyrics from the song's own tag or `.lrc` file, read in the user's
+     * source order, to stand in for a stored copy damaged into U+FFFD.
+     */
+    private suspend fun findCleanLocalLyrics(
+        song: Song,
+        sourcePreference: LyricsSourcePreference
+    ): Lyrics? {
+        val localFetchers: List<suspend () -> Lyrics?> =
+            if (sourcePreference == LyricsSourcePreference.LOCAL_FIRST) {
+                listOf({ findLocalLyricsFile(song) }, { loadEmbeddedLyricsFromMetadata(song) })
+            } else {
+                listOf({ loadEmbeddedLyricsFromMetadata(song) }, { findLocalLyricsFile(song) })
+            }
+        for (fetcher in localFetchers) {
+            val lyrics = try {
+                fetcher()
+            } catch (e: Exception) {
+                Timber.tag(TAG).w("Error reading local lyrics: ${e.message}")
+                null
+            }
+            if (lyrics != null && lyrics.isValid() && !lyrics.containsReplacementCharacter()) {
+                return lyrics
+            }
+        }
+        return null
     }
 
     private fun parseStoredLyrics(rawLyrics: String): Lyrics? {
@@ -1104,14 +1148,7 @@ class LyricsRepositoryImpl @Inject constructor(
     private fun lyricsToRawContent(lyrics: Lyrics): String? {
         val syncedLyrics = lyrics.synced
         if (!syncedLyrics.isNullOrEmpty()) {
-            val hasWordTimestamps = syncedLyrics.any { !it.words.isNullOrEmpty() }
-            return if (hasWordTimestamps) {
-                toWordByWordLrc(syncedLyrics)
-            } else {
-                syncedLyrics.joinToString("\n") { line ->
-                    "[${formatTimestamp(line.time)}]${line.line}"
-                }
-            }
+            return LyricsUtils.toEnhancedLrc(syncedLyrics, includeWordTimings = syncedLyrics.hasWordTimings())
         }
 
         return lyrics.plain
@@ -1395,11 +1432,11 @@ class LyricsRepositoryImpl @Inject constructor(
         try {
             lyricsDao.deleteLyrics(songId)
             val prefix = getGeminiSongPrefix(songIdStr)
-            geminiLyricsDao.deleteCacheByPrefix("$prefix%")
+            geminiLyricsDao?.deleteCacheByPrefix("$prefix%")
             val legacyHash = MessageDigest.getInstance("SHA-256")
                 .digest(songIdStr.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
-            geminiLyricsDao.deleteCache("gemini_$legacyHash")
+            geminiLyricsDao?.deleteCache("gemini_$legacyHash")
         } catch (e: Exception) {
             Timber.tag(TAG).w(e, "Error removing lyrics from DB for ID: $songId")
         }
@@ -1417,7 +1454,7 @@ class LyricsRepositoryImpl @Inject constructor(
         lyricsCache.evictAll()
         lyricsDao.deleteAll()
         try {
-            geminiLyricsDao.clearAll()
+            geminiLyricsDao?.clearAll()
         } catch (e: Exception) {
             Timber.tag(TAG).w(e, "Error clearing Gemini lyrics cache")
         }
@@ -1553,6 +1590,8 @@ class LyricsRepositoryImpl @Inject constructor(
         lyrics: Lyrics,
         targetLanguage: String
     ): Result<Lyrics> = withContext(Dispatchers.IO) {
+        val client = geminiLyricsClient ?: return@withContext Result.success(lyrics)
+        val dao = geminiLyricsDao ?: return@withContext Result.success(lyrics)
         try {
             val apiKey = userPreferencesRepository.geminiApiKeyFlow.first()
             if (apiKey.isNullOrBlank()) {
@@ -1569,17 +1608,17 @@ class LyricsRepositoryImpl @Inject constructor(
                 if (lines.all { it.isBlank() }) return@withContext Result.success(lyrics)
 
                 val textHash = hashLyricsText(lines)
-                val cached = geminiLyricsDao.getCache(trackKey)
+                val cached = dao.getCache(trackKey)
 
                 val items: List<GeminiLyricItem> = if (cached != null && cached.originalTextHash == textHash) {
                     deserializeGeminiItems(cached.structuredJson) ?: return@withContext Result.failure(
                         IOException("Failed to deserialize cached lyrics")
                     )
                 } else {
-                    val result = geminiLyricsClient.translateAndRomanize(lines, apiKey, resolvedTargetLanguage, preferredModel)
+                    val result = client.translateAndRomanize(lines, apiKey, resolvedTargetLanguage, preferredModel)
                     if (result.isSuccess) {
                         val fetchedItems = result.getOrThrow()
-                        geminiLyricsDao.insertCache(
+                        dao.insertCache(
                             GeminiLyricsCacheEntity(
                                 trackKey = trackKey,
                                 originalTextHash = textHash,
@@ -1613,17 +1652,17 @@ class LyricsRepositoryImpl @Inject constructor(
                 if (lines.all { it.isBlank() }) return@withContext Result.success(lyrics)
 
                 val textHash = hashLyricsText(lines)
-                val cached = geminiLyricsDao.getCache(trackKey)
+                val cached = dao.getCache(trackKey)
 
                 val items: List<GeminiLyricItem> = if (cached != null && cached.originalTextHash == textHash) {
                     deserializeGeminiItems(cached.structuredJson) ?: return@withContext Result.failure(
                         IOException("Failed to deserialize cached plain lyrics")
                     )
                 } else {
-                    val result = geminiLyricsClient.translateAndRomanize(lines, apiKey, resolvedTargetLanguage, preferredModel)
+                    val result = client.translateAndRomanize(lines, apiKey, resolvedTargetLanguage, preferredModel)
                     if (result.isSuccess) {
                         val fetchedItems = result.getOrThrow()
-                        geminiLyricsDao.insertCache(
+                        dao.insertCache(
                             GeminiLyricsCacheEntity(
                                 trackKey = trackKey,
                                 originalTextHash = textHash,

@@ -150,7 +150,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import com.lostf1sh.pixelplayeross.presentation.components.rememberModalSheetState
 
-private const val PREVIOUS_TRACK_RESTART_THRESHOLD_MS = 10_000L
 private const val SKIP_COMMAND_GUARD_MS = 96L
 
 private enum class SkipDirection { PREVIOUS, NEXT }
@@ -491,7 +490,9 @@ fun FullPlayerContent(
             SkipDirection.PREVIOUS -> predictSkipPreviousCarouselIndex(
                 currentIndex = baseIndex,
                 queue = queueSnapshot,
-                currentPositionMs = latestCurrentPositionProvider(),
+                restartsCurrentTrack = playerViewModel.previousButtonRestartsAt(
+                    latestCurrentPositionProvider()
+                ),
                 repeatMode = latestRepeatMode,
                 isExternalOutputActive = latestIsExternalOutputActive
             )
@@ -1204,15 +1205,16 @@ private fun predictSkipNextCarouselIndex(
     }
 }
 
+/** Null when [restartsCurrentTrack], since previous then restarts the playing track in place. */
 private fun predictSkipPreviousCarouselIndex(
     currentIndex: Int?,
     queue: ImmutableList<Song>,
-    currentPositionMs: Long,
+    restartsCurrentTrack: Boolean,
     repeatMode: Int,
     isExternalOutputActive: Boolean
 ): Int? {
     if (isExternalOutputActive || queue.size <= 1) return null
-    if (currentPositionMs > PREVIOUS_TRACK_RESTART_THRESHOLD_MS) return null
+    if (restartsCurrentTrack) return null
     val safeCurrentIndex = currentIndex?.takeIf { it in queue.indices } ?: return null
 
     return when {
@@ -1783,7 +1785,7 @@ private fun EfficientSlider(
         isPlaying = isPlaying,
         isVisible = isVisible,
         trackEdgePadding = trackEdgePadding,
-        semanticsLabel = "Playback position",
+        semanticsLabel = stringResource(R.string.cd_playback_position),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp, horizontal = 0.dp)
@@ -2493,7 +2495,7 @@ private fun BottomToggleRow(
                 inactiveContentColor = inactiveContentColor,
                 onClick = onShuffleToggle,
                 iconId = R.drawable.rounded_shuffle_24,
-                contentDesc = "Shuffle"
+                contentDesc = stringResource(R.string.cd_shuffle)
             )
             val repeatActive = repeatMode != Player.REPEAT_MODE_OFF
             val repeatIcon = when (repeatMode) {
@@ -2511,7 +2513,7 @@ private fun BottomToggleRow(
                 inactiveContentColor = inactiveContentColor,
                 onClick = onRepeatToggle,
                 iconId = repeatIcon,
-                contentDesc = "Repeat"
+                contentDesc = stringResource(R.string.cd_repeat)
             )
             ToggleSegmentButton(
                 modifier = commonModifier,
@@ -2523,7 +2525,7 @@ private fun BottomToggleRow(
                 inactiveContentColor = inactiveContentColor,
                 onClick = onFavoriteToggle,
                 iconId = if (isFavorite) R.drawable.round_favorite_24 else R.drawable.rounded_favorite_24,
-                contentDesc = "Favorite"
+                contentDesc = stringResource(R.string.cd_favorite)
             )
         }
     }

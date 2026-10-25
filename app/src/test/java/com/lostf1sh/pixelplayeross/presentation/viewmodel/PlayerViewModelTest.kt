@@ -193,6 +193,8 @@ class PlayerViewModelTest {
         every { mockMusicRepository.getSongCountFlow() } returns flowOf(0)
         every { mockMusicRepository.getCloudSongCountFlow() } returns flowOf(0)
         every { mockMusicRepository.searchSongs(any()) } returns flowOf(emptyList())
+        every { mockMusicRepository.getCachedLyrics(any()) } returns null
+        every { mockMusicRepository.cacheLyrics(any(), any()) } just Runs
         every { mockMusicRepository.getMusicByGenre(any()) } returns flowOf(emptyList())
         coEvery { mockMusicRepository.getFavoriteSongIdsOnce() } returns emptySet()
         every { mockMusicRepository.getFavoriteSongIdsFlow() } returns _favoriteIdsFlow

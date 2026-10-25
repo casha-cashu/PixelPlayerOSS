@@ -333,14 +333,17 @@ class PlayerViewModel @Inject constructor(
         override fun onLoadingStarted(songId: String) {
             playbackStateHolder.updateStablePlayerState { state ->
                 if (state.currentSong?.id != songId) state
-                else state.copy(isLoadingLyrics = true, lyrics = null)
+                else {
+                    val alreadyCached = state.lyrics
+                    state.copy(isLoadingLyrics = alreadyCached == null, lyrics = alreadyCached)
+                }
             }
         }
 
         override fun onLyricsLoaded(songId: String, lyrics: Lyrics?) {
             playbackStateHolder.updateStablePlayerState { state ->
                 if (state.currentSong?.id != songId) state
-                else state.copy(isLoadingLyrics = false, lyrics = lyrics)
+                else state.copy(isLoadingLyrics = false, lyrics = lyrics ?: state.lyrics)
             }
         }
     }
@@ -2645,13 +2648,17 @@ class PlayerViewModel @Inject constructor(
             0L
         }
 
+        val cachedLyrics = song?.let { musicRepository.getCachedLyrics(it) }
+        song?.albumArtUriString?.let { uri ->
+            themeStateHolder.checkAndApplyMemoryCachedScheme(uri)
+        }
         playbackStateHolder.updateStablePlayerState {
             it.copy(
                 currentSong = song,
                 currentMediaItemIndex = expectedIndex,
                 totalDuration = resolvedDuration,
-                lyrics = null,
-                isLoadingLyrics = song != null,
+                lyrics = cachedLyrics,
+                isLoadingLyrics = song != null && cachedLyrics == null,
                 isPlaying = player.isPlaying,
                 playWhenReady = player.playWhenReady
             )
@@ -2776,6 +2783,10 @@ class PlayerViewModel @Inject constructor(
                             0L
                         }
                         resetLyricsSearchState()
+                        val cachedLyrics = song?.let { musicRepository.getCachedLyrics(it) }
+                        song?.albumArtUriString?.let { uri ->
+                            themeStateHolder.checkAndApplyMemoryCachedScheme(uri)
+                        }
                         playbackStateHolder.updateStablePlayerState {
                             it.copy(
                                 currentSong = song,
@@ -2785,8 +2796,8 @@ class PlayerViewModel @Inject constructor(
                                     playerCtrl.currentMediaItemIndex
                                 },
                                 totalDuration = resolvedDuration,
-                                lyrics = null,
-                                isLoadingLyrics = song != null,
+                                lyrics = cachedLyrics,
+                                isLoadingLyrics = song != null && cachedLyrics == null,
                                 playWhenReady = playerCtrl.playWhenReady
                             )
                         }
@@ -4383,9 +4394,14 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private var lyricsLoadJob: Job? = null
+
     private fun loadLyricsForCurrentSong() {
         val currentSong = playbackStateHolder.stablePlayerState.value.currentSong ?: return
-        lyricsStateHolder.loadLyricsForSong(currentSong, lyricsSourcePreference.value)
+        lyricsLoadJob?.cancel()
+        lyricsLoadJob = viewModelScope.launch(dispatchers.io) {
+            lyricsStateHolder.loadLyricsForSong(currentSong, lyricsSourcePreference.value)
+        }
     }
 
     fun saveBatchMetadata(
@@ -5054,6 +5070,7 @@ class PlayerViewModel @Inject constructor(
                     val hasTranslationOrRomanization = enriched.synced?.any { !it.translation.isNullOrBlank() || !it.romanization.isNullOrBlank() } == true ||
                         enriched.plain?.any { it.contains("\n") } == true
                     if (hasTranslationOrRomanization) {
+                        musicRepository.cacheLyrics(currentSong, enriched)
                         val activeSongId = stablePlayerState.value.currentSong?.id
                         if (activeSongId == requestedSongId) {
                             playbackStateHolder.updateStablePlayerState { it.copy(lyrics = enriched) }

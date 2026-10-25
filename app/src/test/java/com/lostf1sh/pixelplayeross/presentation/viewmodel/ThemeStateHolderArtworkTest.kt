@@ -47,6 +47,7 @@ class ThemeStateHolderArtworkTest {
     fun setUpArtworkVersion() {
         mockkObject(AlbumArtUtils)
         every { AlbumArtUtils.artworkCacheVersion } returns artworkVersion
+        every { processor.getColorSchemeFromMemory(any(), any(), any()) } returns null
         coEvery { processor.getOrGenerateColorScheme(any(), any(), any(), any()) } answers {
             if (artworkVersion.value == 0L) oldScheme else newScheme
         }

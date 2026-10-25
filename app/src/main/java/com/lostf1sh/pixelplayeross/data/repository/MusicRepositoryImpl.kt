@@ -897,6 +897,14 @@ class MusicRepositoryImpl @Inject constructor(
         )
     }
 
+    override fun getCachedLyrics(song: Song): Lyrics? {
+        return lyricsRepository.getCachedLyrics(song)
+    }
+
+    override fun cacheLyrics(song: Song, lyrics: Lyrics) {
+        lyricsRepository.cacheLyrics(song, lyrics)
+    }
+
     override suspend fun getLyrics(
         song: Song,
         sourcePreference: LyricsSourcePreference,

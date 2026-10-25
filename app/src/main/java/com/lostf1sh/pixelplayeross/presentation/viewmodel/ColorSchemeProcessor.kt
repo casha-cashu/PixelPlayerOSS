@@ -65,6 +65,24 @@ class ColorSchemeProcessor @Inject constructor(
     val requestChannel = Channel<String>(capacity = 32, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
 
     /**
+     * Synchronously checks in-memory cache for a color scheme for the given album art URI.
+     * Returns immediately without thread hop or I/O.
+     */
+    fun getColorSchemeFromMemory(
+        albumArtUri: String,
+        paletteStyle: AlbumArtPaletteStyle,
+        colorAccuracyLevel: Int = AlbumArtColorAccuracy.DEFAULT
+    ): ColorSchemePair? {
+        val cleanUri = normalizeUriForCaching(albumArtUri)
+        val cacheKey = buildCacheKey(cleanUri, paletteStyle, colorAccuracyLevel)
+        return memoryCache.get(cacheKey)
+    }
+
+    internal fun normalizeUriForCaching(uri: String): String {
+        return if (uri.contains("?t=")) uri.substringBefore('?') else uri
+    }
+
+    /**
      * Gets or generates a color scheme for the given album art URI.
      * Checks memory cache first, then database, then generates new.
      * All heavy operations are performed on appropriate dispatchers.
@@ -136,7 +154,8 @@ class ColorSchemeProcessor @Inject constructor(
         expectedLocalGeneration: Long
     ): ColorSchemePair? = traceAsyncSection("ColorSchemeProcessor.generate") {
         try {
-            val cacheKey = buildCacheKey(albumArtUri, paletteStyle, colorAccuracyLevel)
+            val cleanUri = normalizeUriForCaching(albumArtUri)
+            val cacheKey = buildCacheKey(cleanUri, paletteStyle, colorAccuracyLevel)
             val bitmap = withContext(Dispatchers.IO) {
                 loadBitmapForColorExtraction(albumArtUri, forceRefresh)
             } ?: return@traceAsyncSection null
@@ -160,7 +179,7 @@ class ColorSchemeProcessor @Inject constructor(
                     withContext(Dispatchers.IO) {
                         albumArtThemeDao.insertTheme(
                             mapColorSchemePairToEntity(
-                                uri = albumArtUri,
+                                uri = cleanUri,
                                 paletteStyle = paletteStyle,
                                 colorAccuracyLevel = colorAccuracyLevel,
                                 pair = schemePair
@@ -172,7 +191,7 @@ class ColorSchemeProcessor @Inject constructor(
                 return schemePair
             }
 
-            if (LocalArtworkUri.isLocalArtworkUri(albumArtUri)) {
+            if (LocalArtworkUri.isLocalArtworkUri(cleanUri)) {
                 localArtworkCacheMutex.withLock {
                     if (expectedLocalGeneration != localArtworkGeneration) null else cacheScheme()
                 }
@@ -270,10 +289,12 @@ class ColorSchemeProcessor @Inject constructor(
      * Invalidates the color scheme for a URI in both memory and database.
      */
     suspend fun invalidateScheme(uri: String) {
+        val cleanUri = normalizeUriForCaching(uri)
         clearExtractedColorCache()
+        removeUriFromMemoryCache(cleanUri)
         removeUriFromMemoryCache(uri)
         withContext(Dispatchers.IO) {
-            albumArtThemeDao.deleteThemesByUris(listOf(uri))
+            albumArtThemeDao.deleteThemesByUris(listOf(cleanUri, uri).distinct())
         }
     }
 
@@ -451,14 +472,15 @@ class ColorSchemeProcessor @Inject constructor(
         colorAccuracyLevel: Int,
         expectedLocalGeneration: Long
     ): ColorSchemePair? {
-        val cacheKey = buildCacheKey(albumArtUri, paletteStyle, colorAccuracyLevel)
+        val cleanUri = normalizeUriForCaching(albumArtUri)
+        val cacheKey = buildCacheKey(cleanUri, paletteStyle, colorAccuracyLevel)
 
         suspend fun loadScheme(): ColorSchemePair? {
             memoryCache.get(cacheKey)?.let { return it }
 
             val cachedEntity = withContext(Dispatchers.IO) {
                 albumArtThemeDao.getThemeByUriAndStyle(
-                    albumArtUri,
+                    cleanUri,
                     paletteStyleCacheKey(paletteStyle, colorAccuracyLevel)
                 )
             } ?: return null
@@ -468,7 +490,7 @@ class ColorSchemeProcessor @Inject constructor(
             }
         }
 
-        return if (LocalArtworkUri.isLocalArtworkUri(albumArtUri)) {
+        return if (LocalArtworkUri.isLocalArtworkUri(cleanUri)) {
             localArtworkCacheMutex.withLock {
                 if (expectedLocalGeneration != localArtworkGeneration) null else loadScheme()
             }

@@ -117,6 +117,28 @@ class ThemeStateHolder @Inject constructor(
         }
     }
 
+    /**
+     * Synchronously checks in-memory cache for a color scheme and applies it immediately if present.
+     * Returns true if a cached scheme was found and applied.
+     */
+    fun checkAndApplyMemoryCachedScheme(uriString: String?): Boolean {
+        if (uriString.isNullOrBlank()) return false
+        val cached = runCatching {
+            colorSchemeProcessor.getColorSchemeFromMemory(
+                albumArtUri = uriString,
+                paletteStyle = currentPaletteStyle,
+                colorAccuracyLevel = currentPaletteAccuracy
+            )
+        }.getOrNull() ?: individualAlbumColorSchemes[uriString]?.value
+        if (cached != null) {
+            _currentAlbumArtUri.value = uriString
+            _currentAlbumArtColorSchemePair.value = cached
+            individualAlbumColorSchemes[uriString]?.value = cached
+            return true
+        }
+        return false
+    }
+
     suspend fun extractAndGenerateColorScheme(
         albumArtUriAsUri: Uri?,
         currentSongUriString: String?,
@@ -132,6 +154,9 @@ class ThemeStateHolder @Inject constructor(
             }
 
             val uriString = albumArtUriAsUri.toString()
+            if (!isPreload) {
+                checkAndApplyMemoryCachedScheme(uriString)
+            }
             val schemePair = getCurrentArtworkColorScheme(
                 albumArtUri = uriString,
                 paletteStyle = currentPaletteStyle,

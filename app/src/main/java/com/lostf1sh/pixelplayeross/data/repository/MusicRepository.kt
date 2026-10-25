@@ -291,6 +291,10 @@ interface MusicRepository {
      */
     fun getGenres(): Flow<List<com.lostf1sh.pixelplayeross.data.model.Genre>>
 
+    fun getCachedLyrics(song: Song): Lyrics?
+
+    fun cacheLyrics(song: Song, lyrics: Lyrics)
+
     suspend fun getLyrics(
         song: Song,
         sourcePreference: LyricsSourcePreference = LyricsSourcePreference.EMBEDDED_FIRST,

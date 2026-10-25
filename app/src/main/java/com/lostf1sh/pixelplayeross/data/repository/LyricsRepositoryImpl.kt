@@ -1646,7 +1646,9 @@ class LyricsRepositoryImpl @Inject constructor(
                         line
                     }
                 }
-                return@withContext Result.success(lyrics.copy(synced = enrichedSynced))
+                val enrichedResult = lyrics.copy(synced = enrichedSynced)
+                cacheLyrics(song, enrichedResult)
+                return@withContext Result.success(enrichedResult)
             } else if (!lyrics.plain.isNullOrEmpty()) {
                 val lines = lyrics.plain
                 if (lines.all { it.isBlank() }) return@withContext Result.success(lyrics)
@@ -1690,7 +1692,9 @@ class LyricsRepositoryImpl @Inject constructor(
                         orig
                     }
                 }
-                return@withContext Result.success(lyrics.copy(plain = enrichedPlain))
+                val enrichedResult = lyrics.copy(plain = enrichedPlain)
+                cacheLyrics(song, enrichedResult)
+                return@withContext Result.success(enrichedResult)
             }
 
             Result.success(lyrics)
@@ -1738,6 +1742,36 @@ class LyricsRepositoryImpl @Inject constructor(
     override fun clearCache() {
         LogUtils.d(this, "Clearing lyrics in-memory cache")
         lyricsCache.evictAll()
+    }
+
+    override fun getCachedLyrics(song: Song): Lyrics? {
+        val cacheKey = generateCacheKey(song.id)
+        return lyricsCache.get(cacheKey)
+    }
+
+    override fun cacheLyrics(song: Song, lyrics: Lyrics) {
+        val cacheKey = generateCacheKey(song.id)
+        lyricsCache.put(cacheKey, lyrics)
+        saveLocalLyricsJson(song, lyrics)
+        song.id.toLongOrNull()?.let { songIdLong ->
+            val rawContent = lyricsToRawContent(lyrics)
+            if (!rawContent.isNullOrBlank()) {
+                repositoryScope.launch {
+                    try {
+                        lyricsDao.insert(
+                            com.lostf1sh.pixelplayeross.data.database.LyricsEntity(
+                                songId = songIdLong,
+                                content = rawContent,
+                                isSynced = !lyrics.synced.isNullOrEmpty(),
+                                source = "local_cache"
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Timber.tag(TAG).w(e, "Error saving cached lyrics to DB")
+                    }
+                }
+            }
+        }
     }
 
     private fun generateCacheKey(songId: String): String = songId

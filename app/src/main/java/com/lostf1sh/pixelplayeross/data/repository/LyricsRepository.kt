@@ -55,6 +55,16 @@ interface LyricsRepository {
     suspend fun resetAllLyrics()
     
     /**
+     * Synchronously returns cached lyrics for a song from in-memory cache, or null if not cached.
+     */
+    fun getCachedLyrics(song: Song): Lyrics?
+
+    /**
+     * Updates in-memory and persistent cache with enriched lyrics.
+     */
+    fun cacheLyrics(song: Song, lyrics: Lyrics)
+
+    /**
      * Clear in-memory cache only.
      */
     fun clearCache()

@@ -559,6 +559,19 @@ fun LyricsSheet(
         }
     }
 
+    val fontScale by animateFloatAsState(
+        targetValue = if (immersiveMode) 1.35f else 1f,
+        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+        label = "fontScale"
+    )
+
+    val scaledTextStyle = remember(sizedLyricsTextStyle, fontScale) {
+        sizedLyricsTextStyle.copy(
+            fontSize = sizedLyricsTextStyle.fontSize * fontScale,
+            lineHeight = sizedLyricsTextStyle.lineHeight * fontScale
+        )
+    }
+
 
     fun resetImmersiveTimer() {
         lastInteractionTime = System.currentTimeMillis()
@@ -752,42 +765,36 @@ fun LyricsSheet(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = !immersiveMode,
-                    enter = fadeIn(tween(250)) + slideInVertically(tween(250)) { -it },
-                    exit = fadeOut(tween(250)) + slideOutVertically(tween(250)) { -it },
+                AnimatedContent(
+                    targetState = currentSong,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(300)) + 
+                         scaleIn(initialScale = 0.9f, animationSpec = tween(300)))
+                        .togetherWith(fadeOut(animationSpec = tween(300)))
+                    },
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .zIndex(2f)
-                ) {
-                    AnimatedContent(
-                        targetState = currentSong,
-                        transitionSpec = {
-                            (fadeIn(animationSpec = tween(300)) + 
-                             scaleIn(initialScale = 0.9f, animationSpec = tween(300)))
-                            .togetherWith(fadeOut(animationSpec = tween(300)))
-                        },
-                        modifier = Modifier.wrapContentWidth(),
-                        label = "headerAnimation"
-                    ) { song ->
-                        LyricsTrackInfo(
-                            song = song,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .padding(
-                                    top = 4.dp, bottom = 24.dp, start = 18.dp, end = 18.dp
-                                )
-                                .background(
-                                    color = backgroundColor,
-                                    shape = CircleShape
-                                )
-                                .wrapContentWidth()
-                                .animateContentSize(),
-                            backgroundColor = backgroundColor,
-                            contentColor = onBackgroundColor,
-                            isPlaying = isPlaying
-                        )
-                    }
+                        .wrapContentWidth(),
+                    label = "headerAnimation"
+                ) { song ->
+                    LyricsTrackInfo(
+                        song = song,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(
+                                top = 4.dp, bottom = 24.dp, start = 18.dp, end = 18.dp
+                            )
+                            .background(
+                                color = backgroundColor,
+                                shape = CircleShape
+                            )
+                            .wrapContentWidth()
+                            .animateContentSize(),
+                        backgroundColor = backgroundColor,
+                        contentColor = onBackgroundColor,
+                        isPlaying = isPlaying
+                    )
                 }
 
                 when (showSyncedLyrics) {
@@ -839,7 +846,7 @@ fun LyricsSheet(
                                 lyricsSyncOffset = lyricsSyncOffset,
                                 positionOverrideMs = previewSeekPositionMs,
                                 accentColor = lyricHighlightColor,
-                                textStyle = sizedLyricsTextStyle,
+                                textStyle = scaledTextStyle,
                                 onLineClick = { syncedLine -> 
                                     onSeekTo(
                                         resolveSeekPositionMs(
@@ -910,7 +917,7 @@ fun LyricsSheet(
                                 ) { index, line ->
                                     PlainLyricsLine(
                                         line = line,
-                                        style = sizedLyricsTextStyle,
+                                        style = scaledTextStyle,
                                         romanization = plainLyricsRomanization?.getOrNull(index),
                                         lyricsAlignment = lyricsAlignment,
                                         showTranslation = if (hasTranslatedLyrics) showLyricsTranslation else true,
@@ -1566,7 +1573,7 @@ fun LyricLineRow(
     )
 
     val targetScale = if (decorativeMotionEnabled) when (focusDistance) {
-        0 -> 1.1f
+        0 -> if (immersiveMode) 1.02f else 1.1f
         1 -> 0.95f
         else -> 0.85f
     } else 1f
@@ -1618,14 +1625,16 @@ fun LyricLineRow(
     )
     val lineBlurEffectCache = remember { BlurEffectCache() }
 
-    val baseModifier = if (decorativeMotionEnabled) {
-        when (lyricsAlignment) {
-            "center" -> modifier.padding(horizontal = 36.dp)
-            "right" -> modifier.padding(start = 36.dp)
-            else -> modifier.padding(end = 36.dp)
-        }
-    } else {
-        modifier
+    val horizontalEndPadding by animateDpAsState(
+        targetValue = if (decorativeMotionEnabled && !immersiveMode) 36.dp else 12.dp,
+        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+        label = "lineEndPadding"
+    )
+
+    val baseModifier = when (lyricsAlignment) {
+        "center" -> modifier.padding(horizontal = horizontalEndPadding)
+        "right" -> modifier.padding(start = horizontalEndPadding)
+        else -> modifier.padding(end = horizontalEndPadding)
     }
     val animatedModifier = if (useAnimatedLyrics) {
         baseModifier
@@ -2235,7 +2244,22 @@ private fun LyricsTrackInfo(
 ) {
     if (song == null) return
 
-    val albumShape = RoundedCornerShape(8.dp)
+    val albumShape = CircleShape
+
+    val currentRotation = remember { Animatable(0f) }
+    
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                currentRotation.animateTo(
+                    targetValue = currentRotation.value + 360f,
+                    animationSpec = tween(8000, easing = LinearEasing)
+                )
+            }
+        } else {
+             currentRotation.stop()
+        }
+    }
 
     Row(
         modifier = modifier,
@@ -2247,8 +2271,11 @@ private fun LyricsTrackInfo(
             shape = albumShape,
             contentDescription = stringResource(R.string.cd_cover_art),
             modifier = Modifier
-                .size(54.dp)
-                .padding(4.dp)
+                .size(66.dp)
+                .padding(6.dp)
+                .graphicsLayer {
+                    rotationZ = currentRotation.value % 360f
+                }
                 .clip(albumShape),
             contentScale = ContentScale.Crop
         )

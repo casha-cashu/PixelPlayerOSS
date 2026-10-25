@@ -1500,9 +1500,13 @@ fun SyncedLyricsList(
                             time = line.time,
                             color = LocalContentColor.current.copy(alpha = 0.6f),
                             nextTime = lineEndTimeMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                            distanceFromCurrent = distanceFromCurrent,
+                            useAnimatedLyrics = useAnimatedLyrics,
+                            accentColor = accentColor,
                             modifier = parallaxModifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp)
+                                .padding(vertical = 8.dp),
+                            onClick = { onLineClick(line) }
                         )
                     }
                 }

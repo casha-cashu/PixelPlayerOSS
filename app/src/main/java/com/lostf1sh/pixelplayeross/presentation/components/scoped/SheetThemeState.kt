@@ -180,7 +180,9 @@ private fun rememberBatchAnimatedColorScheme(target: ColorScheme): ColorScheme {
         progress.snapTo(0f)
         progress.animateTo(
             targetValue = 1f,
-            animationSpec = spring(stiffness = Spring.StiffnessLow)
+            // Snappier than StiffnessLow so the palette resolves in step with the
+            // carousel skip animation instead of trailing behind it.
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
         )
     }
 

@@ -1364,7 +1364,8 @@ fun BubblesLine(
     accentColor: Color = color,
     onClick: (() -> Unit)? = null
 ) {
-    val isCurrent = distanceFromCurrent == 0
+    val currentPosition by positionFlow.collectAsStateWithLifecycle(initialValue = 0L)
+    val isCurrent = distanceFromCurrent == 0 || (currentPosition in time.toLong() until nextTime.toLong())
 
     val targetScale = if (useAnimatedLyrics) when (distanceFromCurrent) {
         0 -> 1.05f; 1 -> 0.95f; else -> 0.85f
@@ -1410,7 +1411,7 @@ fun BubblesLine(
     )
 
     val waveWeight by animateFloatAsState(
-        targetValue = if (isCurrent && useAnimatedLyrics) 1f else 0f,
+        targetValue = if (isCurrent) 1f else 0f,
         animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
         label = "bubbleWaveWeight"
     )

@@ -715,6 +715,13 @@ class PlayerViewModel @Inject constructor(
         cancelPendingDirectPlayback()
         val requestToken = fullQueuePlaybackToken
 
+        // Immediately start playback of the selected song so the user doesn't wait
+        // for full-library DB resolution before hearing audio.
+        if (isVoluntaryPlay) incrementSongScore(song)
+        viewModelScope.launch {
+            internalPlaySongs(listOf(song), song, queueName, null)
+        }
+
         fullQueuePlaybackJob = viewModelScope.launch {
             try {
                 val sortedIds = sortedIdsProvider()
@@ -723,13 +730,46 @@ class PlayerViewModel @Inject constructor(
                 val fullQueue = resolvePlaybackQueueFromSortedIds(sortedIds)
                 throwIfFullQueuePlaybackRequestIsStale(requestToken)
 
-                showAndPlaySong(
-                    song = song,
-                    contextSongs = fullQueue.ifEmpty { listOf(song) },
-                    queueName = queueName,
-                    isVoluntaryPlay = isVoluntaryPlay,
-                    cancelPendingQueueBuild = false
-                )
+                val targetQueue = fullQueue.ifEmpty { listOf(song) }
+                val isPersistent = userPreferencesRepository.persistentShuffleEnabledFlow.first()
+                throwIfFullQueuePlaybackRequestIsStale(requestToken)
+                val isShuffleOn = playbackStateHolder.stablePlayerState.value.isShuffleEnabled
+
+                queueStateHolder.setOriginalQueueOrder(targetQueue, List(targetQueue.size) { null })
+
+                val finalFullQueue = if (isPersistent && isShuffleOn) {
+                    withContext(dispatchers.default) {
+                        QueueUtils.buildAnchoredShuffleQueueSuspending(
+                            targetQueue,
+                            targetQueue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+                        )
+                    }
+                } else {
+                    targetQueue
+                }
+                throwIfFullQueuePlaybackRequestIsStale(requestToken)
+
+                _playerUiState.update {
+                    it.copy(
+                        currentPlaybackQueue = finalFullQueue.toPlaybackQueue(),
+                        currentQueueSourceName = queueName
+                    )
+                }
+
+                if (finalFullQueue.size > 1) {
+                    val preparedSegments = preparePlaybackQueueSegments(
+                        songsToPlay = finalFullQueue,
+                        startSongId = song.id,
+                        playlistId = null
+                    )
+                    withContext(Dispatchers.Main.immediate) {
+                        attachPreparedQueueSegmentsIfCurrent(
+                            player = dualPlayerEngine.masterPlayer,
+                            startSongId = song.id,
+                            preparedSegments = preparedSegments
+                        )
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {

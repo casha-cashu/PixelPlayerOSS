@@ -752,36 +752,42 @@ fun LyricsSheet(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                AnimatedContent(
-                    targetState = currentSong,
-                    transitionSpec = {
-                        (fadeIn(animationSpec = tween(300)) + 
-                         scaleIn(initialScale = 0.9f, animationSpec = tween(300)))
-                        .togetherWith(fadeOut(animationSpec = tween(300)))
-                    },
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !immersiveMode,
+                    enter = fadeIn(tween(250)) + slideInVertically(tween(250)) { -it },
+                    exit = fadeOut(tween(250)) + slideOutVertically(tween(250)) { -it },
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .zIndex(2f)
-                        .wrapContentWidth(),
-                    label = "headerAnimation"
-                ) { song ->
-                    LyricsTrackInfo(
-                        song = song,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(
-                                top = 4.dp, bottom = 24.dp, start = 18.dp, end = 18.dp
-                            )
-                            .background(
-                                color = backgroundColor,
-                                shape = CircleShape
-                            )
-                            .wrapContentWidth()
-                            .animateContentSize(),
-                        backgroundColor = backgroundColor,
-                        contentColor = onBackgroundColor,
-                        isPlaying = isPlaying
-                    )
+                ) {
+                    AnimatedContent(
+                        targetState = currentSong,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(300)) + 
+                             scaleIn(initialScale = 0.9f, animationSpec = tween(300)))
+                            .togetherWith(fadeOut(animationSpec = tween(300)))
+                        },
+                        modifier = Modifier.wrapContentWidth(),
+                        label = "headerAnimation"
+                    ) { song ->
+                        LyricsTrackInfo(
+                            song = song,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(
+                                    top = 4.dp, bottom = 24.dp, start = 18.dp, end = 18.dp
+                                )
+                                .background(
+                                    color = backgroundColor,
+                                    shape = CircleShape
+                                )
+                                .wrapContentWidth()
+                                .animateContentSize(),
+                            backgroundColor = backgroundColor,
+                            contentColor = onBackgroundColor,
+                            isPlaying = isPlaying
+                        )
+                    }
                 }
 
                 when (showSyncedLyrics) {
@@ -1560,7 +1566,7 @@ fun LyricLineRow(
     )
 
     val targetScale = if (decorativeMotionEnabled) when (focusDistance) {
-        0 -> if (immersiveMode) 1.05f else 1.1f
+        0 -> 1.1f
         1 -> 0.95f
         else -> 0.85f
     } else 1f
@@ -1612,34 +1618,20 @@ fun LyricLineRow(
     )
     val lineBlurEffectCache = remember { BlurEffectCache() }
 
-    val immersiveZoom by animateFloatAsState(
-        targetValue = if (immersiveMode) 1.25f else 1f,
-        animationSpec = spring(
-            stiffness = Spring.StiffnessLow,
-            dampingRatio = Spring.DampingRatioNoBouncy
-        ),
-        label = "immersiveZoom"
-    )
-
-    val horizontalEndPadding by animateDpAsState(
-        targetValue = if (decorativeMotionEnabled && !immersiveMode) 36.dp else 0.dp,
-        animationSpec = spring(
-            stiffness = Spring.StiffnessLow,
-            dampingRatio = Spring.DampingRatioNoBouncy
-        ),
-        label = "lineEndPadding"
-    )
-
-    val baseModifier = when (lyricsAlignment) {
-        "center" -> modifier.padding(horizontal = horizontalEndPadding)
-        "right" -> modifier.padding(start = horizontalEndPadding)
-        else -> modifier.padding(end = horizontalEndPadding)
+    val baseModifier = if (decorativeMotionEnabled) {
+        when (lyricsAlignment) {
+            "center" -> modifier.padding(horizontal = 36.dp)
+            "right" -> modifier.padding(start = 36.dp)
+            else -> modifier.padding(end = 36.dp)
+        }
+    } else {
+        modifier
     }
     val animatedModifier = if (useAnimatedLyrics) {
         baseModifier
             .graphicsLayer {
-                scaleX = scale * immersiveZoom
-                scaleY = scale * immersiveZoom
+                scaleX = scale
+                scaleY = scale
                 this.alpha = alpha
                 transformOrigin = TransformOrigin(
                     pivotFractionX = when (lyricsAlignment) {
@@ -2243,22 +2235,7 @@ private fun LyricsTrackInfo(
 ) {
     if (song == null) return
 
-    val albumShape = CircleShape
-
-    val currentRotation = remember { Animatable(0f) }
-    
-    LaunchedEffect(isPlaying) {
-        if (isPlaying) {
-            while (true) {
-                currentRotation.animateTo(
-                    targetValue = currentRotation.value + 360f,
-                    animationSpec = tween(8000, easing = LinearEasing)
-                )
-            }
-        } else {
-             currentRotation.stop()
-        }
-    }
+    val albumShape = RoundedCornerShape(8.dp)
 
     Row(
         modifier = modifier,
@@ -2270,11 +2247,8 @@ private fun LyricsTrackInfo(
             shape = albumShape,
             contentDescription = stringResource(R.string.cd_cover_art),
             modifier = Modifier
-                .size(66.dp)
-                .padding(6.dp)
-                .graphicsLayer {
-                    rotationZ = currentRotation.value % 360f
-                }
+                .size(54.dp)
+                .padding(4.dp)
                 .clip(albumShape),
             contentScale = ContentScale.Crop
         )

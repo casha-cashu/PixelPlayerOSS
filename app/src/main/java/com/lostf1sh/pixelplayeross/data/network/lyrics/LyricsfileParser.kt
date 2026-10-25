@@ -53,7 +53,6 @@ internal object LyricsfileParser {
         } else {
             text
         }
-        if (content.isBlank()) return null
         return "[${formatTimestamp(startMs)}]$content"
     }
 

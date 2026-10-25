@@ -66,4 +66,32 @@ class LyricsfileParserTest {
             ),
         ).isNull()
     }
+
+    @Test
+    fun `empty lines representing instrumental breaks are preserved in enhanced lrc`() {
+        val lyricsfile = """
+            version: '1.0'
+            lines:
+              - text: "Line 1"
+                start_ms: 1000
+                end_ms: 2000
+              - text: ''
+                start_ms: 2500
+                end_ms: 5000
+              - text: "Line 2"
+                start_ms: 5500
+                end_ms: 7000
+        """.trimIndent()
+
+        val enhancedLrc = LyricsfileParser.toEnhancedLrc(lyricsfile)
+        assertThat(enhancedLrc).isNotNull()
+        val parsed = LyricsUtils.parseLyrics(enhancedLrc)
+
+        val synced = checkNotNull(parsed.synced)
+        assertThat(synced).hasSize(3)
+        assertThat(synced[0].line).isEqualTo("Line 1")
+        assertThat(synced[1].time).isEqualTo(2500)
+        assertThat(synced[1].line).isEmpty()
+        assertThat(synced[2].line).isEqualTo("Line 2")
+    }
 }

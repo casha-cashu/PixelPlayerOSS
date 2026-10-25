@@ -559,16 +559,6 @@ fun LyricsSheet(
         }
     }
 
-    val fontScale by animateFloatAsState(
-        targetValue = if (immersiveMode) 1.4f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "fontScale"
-    )
-    
-    val scaledTextStyle = sizedLyricsTextStyle.copy(
-        fontSize = sizedLyricsTextStyle.fontSize * fontScale,
-        lineHeight = sizedLyricsTextStyle.lineHeight * fontScale
-    )
 
     fun resetImmersiveTimer() {
         lastInteractionTime = System.currentTimeMillis()
@@ -843,7 +833,7 @@ fun LyricsSheet(
                                 lyricsSyncOffset = lyricsSyncOffset,
                                 positionOverrideMs = previewSeekPositionMs,
                                 accentColor = lyricHighlightColor,
-                                textStyle = scaledTextStyle,
+                                textStyle = sizedLyricsTextStyle,
                                 onLineClick = { syncedLine -> 
                                     onSeekTo(
                                         resolveSeekPositionMs(
@@ -1562,28 +1552,52 @@ fun LyricLineRow(
     }
     val lineColor by animateColorAsState(
         targetValue = if (isCurrentLine) accentColor else unhighlightedColor,
-        animationSpec = tween(
-            durationMillis = if (decorativeMotionEnabled) 90 else 160,
-            easing = FastOutSlowInEasing
-        ),
+        animationSpec = if (decorativeMotionEnabled) spring(
+            stiffness = Spring.StiffnessVeryLow,
+            dampingRatio = Spring.DampingRatioMediumBouncy
+        ) else tween(durationMillis = 250),
         label = "lineColor"
     )
 
     val targetScale = if (decorativeMotionEnabled) when (focusDistance) {
-        0 -> if (immersiveMode) 1.02f else 1.07f; 1 -> 0.97f; else -> 0.92f
+        0 -> if (immersiveMode) 1.05f else 1.1f
+        1 -> 0.95f
+        else -> 0.85f
     } else 1f
     val targetAlpha = if (decorativeMotionEnabled) when (focusDistance) {
-        0 -> 1.0f; 1 -> 0.6f; else -> 0.3f
+        0 -> 1.0f
+        1 -> 0.6f
+        else -> 0.3f
     } else 1f
+
+    val targetPadding = if (decorativeMotionEnabled) when (focusDistance) {
+        0 -> 32.dp
+        1 -> 16.dp
+        else -> 8.dp
+    } else 12.dp
 
     val scale by animateFloatAsState(
         targetValue = targetScale,
-        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
+        animationSpec = if (decorativeMotionEnabled) spring(
+            stiffness = Spring.StiffnessVeryLow,
+            dampingRatio = Spring.DampingRatioMediumBouncy
+        ) else tween(durationMillis = 200),
         label = "lineScale"
+    )
+    val verticalPadding by animateDpAsState(
+        targetValue = targetPadding,
+        animationSpec = if (decorativeMotionEnabled) spring(
+            stiffness = Spring.StiffnessVeryLow,
+            dampingRatio = Spring.DampingRatioMediumBouncy
+        ) else tween(durationMillis = 200),
+        label = "linePadding"
     )
     val alpha by animateFloatAsState(
         targetValue = targetAlpha,
-        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+        animationSpec = if (decorativeMotionEnabled) spring(
+            stiffness = Spring.StiffnessLow,
+            dampingRatio = Spring.DampingRatioNoBouncy
+        ) else tween(durationMillis = 200),
         label = "lineAlpha"
     )
 
@@ -1593,29 +1607,39 @@ fun LyricLineRow(
 
     val blurRadius by animateDpAsState(
         targetValue = targetBlur,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        animationSpec = if (decorativeMotionEnabled) tween(durationMillis = 400) else tween(durationMillis = 200),
         label = "lineBlur"
     )
     val lineBlurEffectCache = remember { BlurEffectCache() }
 
-    // Keep line height stable while the visual focus moves. Scaling happens in a graphics layer,
-    // so neither the word pulse nor the active-line transition can make the lazy list jump.
-    val verticalPadding = if (useAnimatedLyrics) 16.dp else 12.dp
+    val immersiveZoom by animateFloatAsState(
+        targetValue = if (immersiveMode) 1.25f else 1f,
+        animationSpec = spring(
+            stiffness = Spring.StiffnessLow,
+            dampingRatio = Spring.DampingRatioNoBouncy
+        ),
+        label = "immersiveZoom"
+    )
 
-    val baseModifier = if (useAnimatedLyrics && !immersiveMode) {
-        when (lyricsAlignment) {
-            "center" -> modifier.padding(horizontal = 36.dp)
-            "right" -> modifier.padding(start = 36.dp)
-            else -> modifier.padding(end = 36.dp)
-        }
-    } else {
-        modifier
+    val horizontalEndPadding by animateDpAsState(
+        targetValue = if (decorativeMotionEnabled && !immersiveMode) 36.dp else 0.dp,
+        animationSpec = spring(
+            stiffness = Spring.StiffnessLow,
+            dampingRatio = Spring.DampingRatioNoBouncy
+        ),
+        label = "lineEndPadding"
+    )
+
+    val baseModifier = when (lyricsAlignment) {
+        "center" -> modifier.padding(horizontal = horizontalEndPadding)
+        "right" -> modifier.padding(start = horizontalEndPadding)
+        else -> modifier.padding(end = horizontalEndPadding)
     }
     val animatedModifier = if (useAnimatedLyrics) {
         baseModifier
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                scaleX = scale * immersiveZoom
+                scaleY = scale * immersiveZoom
                 this.alpha = alpha
                 transformOrigin = TransformOrigin(
                     pivotFractionX = when (lyricsAlignment) {

@@ -667,6 +667,12 @@ object LyricsUtils {
     // Translation of the line above, read only for a line with no main text: [tr: (Uh uh)]
     private val LRC_TRANSLATION_LINE_REGEX = Regex("^\\[tr:(.*)]$", RegexOption.IGNORE_CASE)
 
+    // Markers indicating an instrumental break or empty lines in various LRC notations: "...", "•••", "(instrumental)", "♪♪"
+    private val INSTRUMENTAL_MARKER_REGEX = Regex(
+        "^(\\s*|\\.{2,}|…+|[•·・\\-—_/]{2,}|\\[instrumental\\]|\\(instrumental\\)|instrumental|\\[инструментал\\]|\\(инструментал\\)|инструментал|[♪♫♩♬\\s]+)$",
+        RegexOption.IGNORE_CASE
+    )
+
     // Enhanced-LRC singer prefix, before or right after the first word tag: "v1: Hi", "<00:01.00>v2:Hi".
     private val LRC_VOICE_PREFIX_REGEX = Regex(
         "^(<\\d{2}:\\d{2}[.:]\\d{2,3}>)?\\s*v(\\d{1,4})\\s*:\\s*",
@@ -762,7 +768,8 @@ object LyricsUtils {
                 val seconds = lineMatcher.group(2)?.toLong() ?: 0
                 val fraction = lineMatcher.group(3)?.toLong() ?: 0
                 val textWithTags = stripFormatCharacters(lineMatcher.group(4)?.trim() ?: "")
-                val (voice, text) = splitVoicePrefix(stripLrcTimestamps(textWithTags))
+                val (voice, rawText) = splitVoicePrefix(stripLrcTimestamps(textWithTags))
+                val text = if (INSTRUMENTAL_MARKER_REGEX.matches(rawText)) "" else rawText
 
                 val millis = if (lineMatcher.group(3)?.length == 2) fraction * 10 else fraction
                 val lineTimestamp = minutes * 60 * 1000 + seconds * 1000 + millis

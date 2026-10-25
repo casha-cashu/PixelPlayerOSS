@@ -486,4 +486,27 @@ class LyricsUtilsTest {
             lrc
         )
     }
+
+    @Test
+    fun parseLyrics_normalizesInstrumentalMarkersToEmptyLine() {
+        val lrc = """
+            [00:05.00]First line
+            [00:10.00]...
+            [00:15.00](instrumental)
+            [00:20.00]•••
+            [00:25.00]
+            [00:30.00]Next line
+        """.trimIndent()
+
+        val parsed = LyricsUtils.parseLyrics(lrc)
+        val synced = parsed.synced!!
+
+        assertEquals(6, synced.size)
+        assertEquals("First line", synced[0].line)
+        assertEquals("", synced[1].line)
+        assertEquals("", synced[2].line)
+        assertEquals("", synced[3].line)
+        assertEquals("", synced[4].line)
+        assertEquals("Next line", synced[5].line)
+    }
 }

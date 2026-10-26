@@ -47,7 +47,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -84,6 +83,7 @@ import com.lostf1sh.pixelplayeross.data.preferences.MAX_LYRICS_FONT_SIZE_SP
 import com.lostf1sh.pixelplayeross.data.preferences.MIN_LYRICS_FONT_SIZE_SP
 import com.lostf1sh.pixelplayeross.presentation.components.CollapsibleCommonTopBar
 import com.lostf1sh.pixelplayeross.presentation.components.MiniPlayerHeight
+import com.lostf1sh.pixelplayeross.presentation.components.ValueSlider
 import com.lostf1sh.pixelplayeross.presentation.settings.search.LocalSettingsHighlightTarget
 import com.lostf1sh.pixelplayeross.presentation.settings.search.settingHighlight
 import com.lostf1sh.pixelplayeross.presentation.viewmodel.PlayerViewModel
@@ -669,7 +669,7 @@ private fun LyricsSliderItem(
                     )
                 }
             }
-            Slider(
+            ValueSlider(
                 value = value,
                 onValueChange = onValueChange,
                 onValueChangeFinished = onValueChangeFinished,
